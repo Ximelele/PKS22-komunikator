@@ -43,7 +43,6 @@ def crc16(data: bytes):
 
 
 def build_header(flag, packet_number, data, file=False):
-
     if file:
         crc = crc16(data)
     else:
@@ -103,19 +102,19 @@ def server_loop():
         flag = int(chr(message[0]))
         packet_num = int(chr(message[1]))
         finalMsg = message[2:]
+        print(crc)
+        print(crc16(finalMsg))
 
         if flag == 5:
-            receive_text(finalMsg, server,message_add)
-
+            receive_text(finalMsg, server, message_add)
 
         if flag == 6:
-            file_name = finalMsg.decode().strip()
-            my_header = build_header(2, 0, "")
-            server.server_socket.sendto(my_header, message_add)
-            receive_file(file_name, flag, server)
+            receive_file(finalMsg, server, message_add)
 
 
-def receive_text(textMsg,server,message_add):
+# todo spravit nemiesto listu dict kvoli sortovaniu podla packet num
+# todo pridat crc do volania funkcie kvoli prvemu fragmentu
+def receive_text(textMsg, server, message_add):
     textArray = []
     textArray.append(textMsg.decode())
     my_header = build_header(4, 0, "")
@@ -128,6 +127,8 @@ def receive_text(textMsg,server,message_add):
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
+        print(crc)
+        print(crc16(message[2:]))
 
         flag = int(chr(message[0]))
         if flag == 9:
@@ -138,7 +139,7 @@ def receive_text(textMsg,server,message_add):
         textArray.append(message[2:].decode())
         my_header = build_header(4, 0, "")
         server.server_socket.sendto(my_header, message_add)
-        number_of_fragments +=1
+        number_of_fragments += 1
 
     my_header = build_header(9, 0, "")
     server.server_socket.sendto(my_header, message_add)
@@ -148,33 +149,43 @@ def receive_text(textMsg,server,message_add):
     print(f'Celkova prijata velkost fragmentov {total_size}')
 
 
-def receive_file(file_name, flag, server):
+def receive_file(file, server, message_add):
+    my_header = build_header(4, 0, "")
+    server.server_socket.sendto(my_header, message_add)
     file_array = {}
-
-    print(file_name)
+    file_name = file.decode()
+    number_of_fragments = 0
+    dlzkapicoviny = 0
     while True:
-        message, message_add = server.server_socket.recvfrom(2048)
+        message, message_add = server.server_socket.recvfrom(1500)
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         flag = int(chr(message[0]))
-        packet_num = int(chr(message[1]))
+        number_of_fragments += 1
         if flag == 9:
             break
-
+        my_header = build_header(4, 0, "")
+        server.server_socket.sendto(my_header, message_add)
+        message = message[0:-2]
         partial_file = message[2:]
-        crc_check = crc16(partial_file)
-
+        dlzkapicoviny += len(partial_file[:-2])
+        file_array[str(number_of_fragments)] = partial_file.decode()
         # if crc_check != crc:
         #     print("Pici tam")
         #     break
 
-        file_array[str(packet_num)] = partial_file
 
-    # file_array=dict(sorted(file_array.keys(), key=lambda item: item[1])
-    fw = open("pici.pdf", 'wb')
+    my_header = build_header(4, 0, "")
+    server.server_socket.sendto(my_header, message_add)
 
+    fw = open("pici.txt", 'wb+')
+
+    print(dlzkapicoviny)
     for i in file_array.values():
-        fw.write(i)
+        fw.write(i.encode())
+
+    print(fw.read())
+
 
 
 client = None
@@ -192,21 +203,38 @@ def client_menu():
 
 # todo prerobit posielanie suboru
 def send_file(file, client):
-    f = open(file, 'rb')
+
+    f = open(file, 'rb+')
     data = f.read()
 
     print(len(data))
-
-    fragment = 0
-
-    while data:
-        my_header = build_header(6, fragment, data, True)
-        client.client_socket.sendto(my_header, client.serverAddressPort)
-        fragment += 1
-        data = f.read(2048)
-
-    my_header = build_header(9, fragment + 1, "")
+    fileArray = []
+    fragments_to_send = 1
+    my_header = build_header(6, 0, file)
     client.client_socket.sendto(my_header, client.serverAddressPort)
+    message, message_add = client.client_socket.recvfrom(1500)
+    global MAX_DATA_SIZE
+
+    if len(data) > MAX_DATA_SIZE:
+        while True:
+            if len(data) > MAX_DATA_SIZE:
+                fileArray.append(data[:MAX_DATA_SIZE])
+                data = data[MAX_DATA_SIZE:]
+            else:
+                fileArray.append(data[:len(data)])
+                break
+    else:
+        fileArray.append(data)
+
+    for index, value in enumerate(fileArray, start=1):
+        my_header = build_header(6, index % 9, value,True)
+        client.client_socket.sendto(my_header, client.serverAddressPort)
+        message, message_add = client.client_socket.recvfrom(1500)
+        fragments_to_send = index
+
+    my_header = build_header(9, (fragments_to_send + 1) % 9, "")
+    client.client_socket.sendto(my_header, client.serverAddressPort)
+    message, message_add = client.client_socket.recvfrom(1500)
 
 
 def send_text(textMsg, client):
@@ -216,25 +244,24 @@ def send_text(textMsg, client):
     global MAX_DATA_SIZE
     if text_len > MAX_DATA_SIZE:
         while True:
-                if len(textMsg) > MAX_DATA_SIZE:
-                    textArray.append(textMsg[:MAX_DATA_SIZE])
-                    textMsg = textMsg[MAX_DATA_SIZE:]
-                else:
-                    textArray.append(textMsg[:len(textMsg)])
-                    break
+            if len(textMsg) > MAX_DATA_SIZE:
+                textArray.append(textMsg[:MAX_DATA_SIZE])
+                textMsg = textMsg[MAX_DATA_SIZE:]
+            else:
+                textArray.append(textMsg[:len(textMsg)])
+                break
     else:
-        textArray = textMsg
+        textArray = [textMsg]
 
-    for index, value in enumerate(textArray,start=1):
-        my_header = build_header(5, index%9, value)
+    for index, value in enumerate(textArray):
+        my_header = build_header(5, index % 9, value)
         client.client_socket.sendto(my_header, client.serverAddressPort)
         message, message_add = client.client_socket.recvfrom(1500)
         fragments_to_send = index
 
-    my_header = build_header(9, fragments_to_send+1, "")
+    my_header = build_header(9, (fragments_to_send + 1) % 9, "")
     client.client_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.client_socket.recvfrom(1500)
-
 
 
 def client_loop():
@@ -260,12 +287,10 @@ def client_loop():
 
         elif choice == "f":
             print("Zadaj subor")
-            file = str("utrpenie.pdf")
+            file = str("testik.txt")
             file_name = os.path.abspath(file)
             print(file_name)
-            my_header = build_header(6, 0, file_name)
-            client.client_socket.sendto(my_header, client.serverAddressPort)
-            message, message_add = client.client_socket.recvfrom(1500)
+            choose_fragment_size()
             send_file(file, client)
 
 
