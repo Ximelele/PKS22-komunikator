@@ -1,3 +1,4 @@
+import os
 import socket
 import struct
 import zlib
@@ -19,7 +20,8 @@ class Client:
     def __init__(self, serverAddressPort):
         self.serverAddressPort = serverAddressPort
 
-#https://stackoverflow.com/questions/67115292/convert-crc16-ccitt-code-from-c-to-python
+
+# https://stackoverflow.com/questions/67115292/convert-crc16-ccitt-code-from-c-to-python
 def crc16(data: bytes):
     xor_in = 0x0000  # initial value
     xor_out = 0x0000  # final XOR value
@@ -40,59 +42,156 @@ def crc16(data: bytes):
     return reg ^ xor_out
 
 
-def build_header(flag, packet_number, data):
-    crc = crc16(data.encode())
+def build_header(flag, packet_number, data,file=False):
+    if file:
+        crc = crc16(data)
+    else:
+        crc = crc16(data.encode())
     my_header = bytes()
     my_header += str(flag).encode()
     my_header += str(packet_number).encode()
-    my_header += data.encode()
+    if file:
+        my_header += data
+    else:
+        my_header += data.encode()
     my_header += crc.to_bytes(2, byteorder='little')
     return my_header
 
-#syn 1
-#ack 2
-#error 3
-#text 4
-#file 5
-#switch 6
+
+# syn 1
+# ack 2
+# error 3
+# text 4
+# file 5
+# switch 6
+server = None
+SYN = False
+
 
 def server_loop():
+    global server
     server = Server("127.0.0.1", 6000)
     server.server_socket.bind((server.ip_addr, server.port))
     print("Bububu server")
-    SYN = False
+    global SYN
+    file_name = ""
     while True:
         message, message_add = server.server_socket.recvfrom(2048)
         if not SYN:
             my_header = build_header(2, 0, "")
-            server.server_socket.sendto(my_header,message_add)
+            server.server_socket.sendto(my_header, message_add)
+            SYN = True
+            continue
 
         crc = message[-2:]
-        crc=int.from_bytes(crc,'little')
-        message = message[0:-2].decode()
-        flag = message[0]
-        packet_num = message[1]
+        crc = int.from_bytes(crc, 'little')
+        message = message[0:-2]
+        flag = int(chr(message[0]))
+        packet_num = int(chr(message[1]))
         finalMsg = message[2:]
-        print(f'flag {flag} cislo {packet_num} message {finalMsg}')
-        sleep(10)
 
+        if flag == 5:
+            print(f'flag {flag} cislo {packet_num} message {finalMsg.decode()}')
+            my_header = build_header(2, 0, "")
+            server.server_socket.sendto(my_header, message_add)
+
+        if flag == 6:
+            file_name = finalMsg.decode().strip()
+            my_header = build_header(2, 0, "")
+            server.server_socket.sendto(my_header, message_add)
+            receive_file(file_name, flag, server)
+
+
+
+def receive_file(file_name, flag, server):
+    file_array = {}
+
+    print(file_name)
+    while True:
+        message, message_add = server.server_socket.recvfrom(2048)
+        crc = message[-2:]
+        crc = int.from_bytes(crc, 'little')
+        flag = int(chr(message[0]))
+        packet_num = int(chr(message[1]))
+        if flag == 9:
+            break
+
+        partial_file = message[2:]
+        crc_check = crc16(partial_file)
+
+        # if crc_check != crc:
+        #     print("Pici tam")
+        #     break
+
+        file_array[str(packet_num)]=partial_file
+
+    #file_array=dict(sorted(file_array.keys(), key=lambda item: item[1])
+    fw = open("pici.pdf",'wb')
+
+    for i in file_array.values():
+        fw.write(i)
+
+
+
+
+
+client = None
+
+def client_menu():
+
+    menu = "t - textova sprava\n"
+    menu += "f - poslat subor\n"
+    menu += "s - zmenit strany\n"
+    menu += "e - zmenit strany\n"
+    print(menu)
+
+    return str(input())
+
+def send_file(file,client):
+
+    f = open(file,'rb')
+    fragment_size = 10
+    data = f.read(2048)
+    fragment = 0
+
+    while data:
+        my_header = build_header(6, fragment, data,True)
+        client.client_socket.sendto(my_header, client.serverAddressPort)
+        fragment +=1
+        data = f.read(2048)
+
+    my_header = build_header(9, fragment+1, "")
+    client.client_socket.sendto(my_header, client.serverAddressPort)
 
 def client_loop():
+    global client
     client = Client(("127.0.0.1", 6000))
-    SYN = False
+    global SYN
     while True:
 
         if not SYN:
             my_header = build_header(1, 0, "")
             client.client_socket.sendto(my_header, client.serverAddressPort)
-            SYN = True
             message, message_add = client.client_socket.recvfrom(2048)
-            message=message.decode()
-            print(message[0])
+            SYN=True
+            continue
+        choice = client_menu()
 
-
-
-
+        if choice == "t":
+            print("Zadaj spravu")
+            textMsg = str(input())
+            my_header = build_header(5, 0, textMsg)
+            client.client_socket.sendto(my_header, client.serverAddressPort)
+            message, message_add = client.client_socket.recvfrom(2048)
+        elif choice == "f":
+            print("Zadaj subor")
+            file = str("utrpenie.pdf")
+            file_name = os.path.abspath(file)
+            print(file_name)
+            my_header = build_header(6, 0, file_name)
+            client.client_socket.sendto(my_header, client.serverAddressPort)
+            message, message_add = client.client_socket.recvfrom(2048)
+            send_file(file,client)
 
 opt = str(input())
 
