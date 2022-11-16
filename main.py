@@ -55,7 +55,7 @@ def build_header(flag, packet_number, data, file=False,error = False):
         crc = crc16(data.encode())
     my_header = bytes()
     my_header += str(flag).encode()
-    my_header += str(packet_number).encode()
+    my_header += packet_number.to_bytes(2, byteorder='little')
     if file:
         my_header += data
     else:
@@ -107,8 +107,9 @@ def server_loop(m_server):
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
         flag = int(chr(message[0]))
-        packet_num = int(chr(message[1]))
-        finalMsg = message[2:]
+        packet_num = message[1:2]
+        packet_num = int.from_bytes(packet_num, 'little')
+        finalMsg = message[3:]
 
         if flag == 5:
             receive_text(finalMsg, server, message_add,crc)
@@ -118,7 +119,6 @@ def server_loop(m_server):
         if flag == 7:
             my_header = build_header(2, 0, "")
             server.my_socket.sendto(my_header, message_add)
-            sleep(1)
             client_loop(server)
 
 
@@ -137,43 +137,44 @@ def receive_text(textMsg, server, message_add,crc):
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
-        total_size += len(message[2:]) + HLAVICKA
-        if(crc16(message[2:])==crc):
-            textMsg=message[2:]
+        packet_num = message[1:2]
+        packet_num = int.from_bytes(packet_num, 'little')
+        print(f'packet number {packet_num} error True')
+        total_size += len(message[3:]) + HLAVICKA
+        if(crc16(message[3:])==crc):
+            textMsg=message[3:]
+            print(f'packet number {packet_num} error False')
+            my_header = build_header(4, 0, "")
+            server.my_socket.sendto(my_header, message_add)
 
-
-    my_header = build_header(4, 0, "")
-    server.my_socket.sendto(my_header, message_add)
 
     textArray.append(textMsg.decode())
     while True:
         message, message_add = server.my_socket.recvfrom(1500)
-
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
+        packet_num = message[1:2]
+        packet_num = int.from_bytes(packet_num, 'little')
 
         flag = int(chr(message[0]))
         if flag == 9:
             break
-        check_crc = crc16(message[2:])
+        check_crc = crc16(message[3:])
 
         if check_crc != crc:
-            my_header = build_header(3, 0, "")
+            my_header = build_header(3, packet_num, "")
+
             server.my_socket.sendto(my_header, message_add)
             errors += 1
-            message, message_add = server.my_socket.recvfrom(1500)
-            crc = message[-2:]
-            crc = int.from_bytes(crc, 'little')
-            message = message[0:-2]
-            total_size += len(message[2:]) + HLAVICKA
-            check_crc = crc16(message[2:])
-            if check_crc == crc:
-                my_header = build_header(4, 0, "")
-                server.my_socket.sendto(my_header, message_add)
-        packet_num = int(chr(message[1]))
-        total_size += len(message[2:])+HLAVICKA
-        textArray.append(message[2:].decode())
+            print(f'packet number {packet_num} error True')
+            total_size += len(message[3:]) + HLAVICKA
+            continue
+        else:
+            print(f'packet number {packet_num} error False')
+
+        total_size += len(message[3:])+HLAVICKA
+        textArray.append(message[3:].decode())
         my_header = build_header(4, 0, "")
         server.my_socket.sendto(my_header, message_add)
         number_of_fragments += 1
@@ -198,12 +199,14 @@ def receive_file(file, server, message_add):
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         flag = int(chr(message[0]))
+        packet_num = message[1:2]
+        packet_num = int.from_bytes(packet_num, 'little')
         if flag == 9:
             break
         my_header = build_header(4, 0, "")
         server.my_socket.sendto(my_header, message_add)
         message = message[0:-2]
-        partial_file = message[2:]
+        partial_file = message[3:]
         total_size += len(partial_file)+HLAVICKA
         file_array[str(number_of_fragments)] = partial_file
         number_of_fragments += 1
@@ -257,13 +260,13 @@ def send_file(file, client):
 
     for index, value in enumerate(fileArray,start=1):
         total_size += len(value)
-        my_header = build_header(6, index % 9, value, True)
+        my_header = build_header(6, index, value, True)
         client.my_socket.sendto(my_header, client.serverAddressPort)
         message, message_add = client.my_socket.recvfrom(1500)
         fragments_to_send = index
     print(f'Pocet odoslanych fragmentov {fragments_to_send+1}')
     print(f'Celkova odoslana velkost fragmentov {total_size}')
-    my_header = build_header(9, (fragments_to_send + 1) % 9, "")
+    my_header = build_header(9, (fragments_to_send + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
@@ -287,20 +290,21 @@ def send_text(textMsg, client):
     with_error = 0
     for index, value in enumerate(textArray):
         if with_error >= error:
-            my_header = build_header(5, index % 9, value)
+            my_header = build_header(5, index, value)
         else:
-            my_header = build_header(5, index % 9, value,False,True)
+            my_header = build_header(5, index, value,False,True)
             with_error+=1
         client.my_socket.sendto(my_header, client.serverAddressPort)
+        #sleep(1)
         message, message_add = client.my_socket.recvfrom(1500)
         flag = int(chr(message[0]))
         if flag == 3:
-            my_header = build_header(5, index % 9, value)
+            my_header = build_header(5, index, value)
             client.my_socket.sendto(my_header, client.serverAddressPort)
             message, message_add = client.my_socket.recvfrom(1500)
         fragments_to_send = index
 
-    my_header = build_header(9, (fragments_to_send + 1) % 9, "")
+    my_header = build_header(9, (fragments_to_send + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
