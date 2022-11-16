@@ -69,12 +69,12 @@ def build_header(flag, packet_number, data, file=False,error = False):
 # server = None
 # client = None
 ZACIATOK_KOMUNIKACIE = False
-MAX_DATA_SIZE = 1468
+MAX_DATA_SIZE = 1467
 HLAVICKA = 4
 
 
 def choose_fragment_size():
-    print("Vyber velkost fragmentu 1-1468")
+    print("Vyber velkost fragmentu 1-1467")
     size = int(input())
     global MAX_DATA_SIZE
     MAX_DATA_SIZE = 1468
@@ -89,7 +89,7 @@ def simulate_error(max_errors):
 
     return errors
 
-
+#fixme opravit swapovanie server klient
 def server_loop(m_server):
     server = m_server
     server.my_socket.bind((server.serverAddressPort[0], server.serverAddressPort[1]))
@@ -122,7 +122,7 @@ def server_loop(m_server):
             client_loop(server)
 
 
-# todo pridat crc do volania funkcie kvoli prvemu fragmentu
+
 def receive_text(textMsg, server, message_add,crc):
     textArray = []
     errors = 0
@@ -159,6 +159,8 @@ def receive_text(textMsg, server, message_add,crc):
 
         flag = int(chr(message[0]))
         if flag == 9:
+            number_of_fragments += 1
+            total_size += HLAVICKA
             break
         check_crc = crc16(message[3:])
 
@@ -175,7 +177,7 @@ def receive_text(textMsg, server, message_add,crc):
 
         total_size += len(message[3:])+HLAVICKA
         textArray.append(message[3:].decode())
-        my_header = build_header(4, 0, "")
+        my_header = build_header(4, packet_num, "")
         server.my_socket.sendto(my_header, message_add)
         number_of_fragments += 1
 
@@ -187,6 +189,8 @@ def receive_text(textMsg, server, message_add,crc):
     print(f'Celkova prijata velkost fragmentov {total_size}')
 
 
+#todo pridat Stop&Wait
+# posielanie s chybami
 def receive_file(file, server, message_add):
     my_header = build_header(4, 0, "")
     server.my_socket.sendto(my_header, message_add)
@@ -194,6 +198,7 @@ def receive_file(file, server, message_add):
     file_name = file.decode()
     number_of_fragments = 1
     total_size = len(file_name)+HLAVICKA
+    errors = 0
     while True:
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
@@ -202,11 +207,24 @@ def receive_file(file, server, message_add):
         packet_num = message[1:2]
         packet_num = int.from_bytes(packet_num, 'little')
         if flag == 9:
+            number_of_fragments +=1
+            total_size+= HLAVICKA
             break
-        my_header = build_header(4, 0, "")
+        check_crc = crc16(message[3:-2])
+
+        if check_crc != crc:
+            my_header = build_header(3, packet_num, "")
+            server.my_socket.sendto(my_header, message_add)
+            errors += 1
+            print(f'packet number {packet_num} error True')
+            total_size += len(message[3:-2]) + HLAVICKA
+            continue
+        else:
+            print(f'packet number {packet_num} error False')
+
+        my_header = build_header(4, packet_num, "")
         server.my_socket.sendto(my_header, message_add)
-        message = message[0:-2]
-        partial_file = message[3:]
+        partial_file = message[3:-2]
         total_size += len(partial_file)+HLAVICKA
         file_array[str(number_of_fragments)] = partial_file
         number_of_fragments += 1
@@ -214,7 +232,7 @@ def receive_file(file, server, message_add):
     my_header = build_header(9, 0, "")
     server.my_socket.sendto(my_header, message_add)
 
-    print(f'Pocet prijatych fragmentov {number_of_fragments}')
+    print(f'Pocet prijatych fragmentov {number_of_fragments+errors}')
     print(f'Celkova prijata velkost fragmentov {total_size}')
     fw = open("picovina.txt", 'wb+')
 
@@ -234,15 +252,15 @@ def client_menu():
     return str(input())
 
 
-# todo prerobit posielanie suboru
 def send_file(file, client):
     f = open(file, 'rb+')
     data = f.read()
-
+    max_error = 0
     fileArray = []
     fragments_to_send = 1
     total_size = len(file)
     my_header = build_header(6, 0, file)
+    # na nazov suboru sa fragmentacia nestahuje
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
     global MAX_DATA_SIZE
@@ -250,22 +268,33 @@ def send_file(file, client):
     if len(data) > MAX_DATA_SIZE:
         while True:
             if len(data) > MAX_DATA_SIZE:
+                max_error+=1
                 fileArray.append(data[:MAX_DATA_SIZE])
                 data = data[MAX_DATA_SIZE:]
             else:
+                max_error += 1
                 fileArray.append(data[:len(data)])
                 break
     else:
         fileArray.append(data)
-
+    error = simulate_error(max_error)
+    with_error = 0
     for index, value in enumerate(fileArray,start=1):
-        total_size += len(value)
-        my_header = build_header(6, index, value, True)
+        if with_error >= error:
+            my_header = build_header(6, index, value,True)
+        else:
+            my_header = build_header(6, index, value,True,True)
+            with_error+=1
         client.my_socket.sendto(my_header, client.serverAddressPort)
+        sleep(0.1)
         message, message_add = client.my_socket.recvfrom(1500)
+        flag = int(chr(message[0]))
+        if flag == 3:
+            my_header = build_header(6, index, value,True)
+            client.my_socket.sendto(my_header, client.serverAddressPort)
+            message, message_add = client.my_socket.recvfrom(1500)
         fragments_to_send = index
-    print(f'Pocet odoslanych fragmentov {fragments_to_send+1}')
-    print(f'Celkova odoslana velkost fragmentov {total_size}')
+
     my_header = build_header(9, (fragments_to_send + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
@@ -295,7 +324,7 @@ def send_text(textMsg, client):
             my_header = build_header(5, index, value,False,True)
             with_error+=1
         client.my_socket.sendto(my_header, client.serverAddressPort)
-        #sleep(1)
+        sleep(0.1)
         message, message_add = client.my_socket.recvfrom(1500)
         flag = int(chr(message[0]))
         if flag == 3:
@@ -308,7 +337,7 @@ def send_text(textMsg, client):
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
-
+#fixme opravit klient na server
 def client_loop(m_client):
     global ZACIATOK_KOMUNIKACIE
     client = m_client
