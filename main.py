@@ -2,7 +2,7 @@ import os
 import socket
 from time import sleep
 
-
+# Keep alive 0
 # syn 1
 # ack 2
 # error 3
@@ -11,7 +11,7 @@ from time import sleep
 # file 6
 # switch 7
 # end 8
-# last_packet 9
+# last fragment 9
 
 class Server:
     my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -90,6 +90,7 @@ def simulate_error(max_errors):
     return errors
 
 #fixme opravit swapovanie server klient
+#todo posielanie packet number do funkcii
 def server_loop(m_server):
     server = m_server
     server.my_socket.bind((server.serverAddressPort[0], server.serverAddressPort[1]))
@@ -128,8 +129,8 @@ def receive_text(textMsg, server, message_add,crc):
     errors = 0
     total_size = len(textMsg)+HLAVICKA
     number_of_fragments = 1
-
-    if crc16(textMsg) != crc:
+    check_crc = crc16(textMsg)
+    if check_crc != crc:
         my_header = build_header(3, 0, "")
         server.my_socket.sendto(my_header, message_add)
         errors += 1
@@ -146,6 +147,9 @@ def receive_text(textMsg, server, message_add,crc):
             print(f'packet number {packet_num} error False')
             my_header = build_header(4, 0, "")
             server.my_socket.sendto(my_header, message_add)
+    else:
+        my_header = build_header(4, 0, "")
+        server.my_socket.sendto(my_header, message_add)
 
 
     textArray.append(textMsg.decode())
@@ -277,6 +281,7 @@ def send_file(file, client):
                 break
     else:
         fileArray.append(data)
+    fileArray = fileArray.shuffle
     error = simulate_error(max_error)
     with_error = 0
     for index, value in enumerate(fileArray,start=1):
@@ -316,13 +321,13 @@ def send_text(textMsg, client):
     else:
         textArray.append(textMsg)
     error =simulate_error(len(textArray))
-    with_error = 0
+
     for index, value in enumerate(textArray):
-        if with_error >= error:
-            my_header = build_header(5, index, value)
-        else:
+        my_header = build_header(5, index, value)
+        if error>0:
+            error-=1
             my_header = build_header(5, index, value,False,True)
-            with_error+=1
+
         client.my_socket.sendto(my_header, client.serverAddressPort)
         sleep(0.1)
         message, message_add = client.my_socket.recvfrom(1500)
