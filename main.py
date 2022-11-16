@@ -281,7 +281,7 @@ def send_file(file, client):
                 break
     else:
         fileArray.append(data)
-    fileArray = fileArray.shuffle
+
     error = simulate_error(max_error)
     with_error = 0
     for index, value in enumerate(fileArray,start=1):
