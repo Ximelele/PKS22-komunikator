@@ -1,6 +1,7 @@
 import os
 import socket
 from time import sleep
+import threading
 
 # Keep alive 0
 # syn 1
@@ -14,16 +15,17 @@ from time import sleep
 # last fragment 9
 
 class Server:
-    my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
 
     def __init__(self, serverAddressPort):
+        self.my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.serverAddressPort = serverAddressPort
 
 
-class Client:
-    my_socket = socket.socket(family=socket.AF_INET, type=socket.SOCK_DGRAM)
 
-    def __init__(self, serverAddressPort):
+class Client:
+    def __init__(self,serverAddressPort):
+        self.my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.serverAddressPort = serverAddressPort
 
 
@@ -48,40 +50,60 @@ def crc16(data: bytes):
     return reg ^ xor_out
 
 
-def build_header(flag, packet_number, data, file=False,error = False):
+def build_header(flag, packet_number, data, file=False, error=False):
     if file:
         crc = crc16(data)
     else:
         crc = crc16(data.encode())
     my_header = bytes()
     my_header += str(flag).encode()
-    my_header += packet_number.to_bytes(2, byteorder='little')
+    my_header += packet_number.to_bytes(3, byteorder='little')
     if file:
         my_header += data
     else:
         my_header += data.encode()
     if error:
-        crc+=1
+        crc += 1
     my_header += crc.to_bytes(2, byteorder='little')
     return my_header
 
-
-# server = None
-# client = None
 ZACIATOK_KOMUNIKACIE = False
-MAX_DATA_SIZE = 1467
-HLAVICKA = 4
+MAX_DATA_SIZE = 1466
+HLAVICKA = 6
+KEEP_ALIVE = False
 
+
+def keep_alive(client, serverAddressPort):
+    global KEEP_ALIVE
+    sleep(0.1)
+    while True:
+        my_header = build_header(0, 0, "")
+
+        client.sendto(my_header, serverAddressPort)
+        try:
+            client.settimeout(0.1)
+            message, message_add = client.recvfrom(1500)
+        except (ConnectionResetError, socket.timeout):
+
+            print(f'Server je nedostupny')
+        else:
+            print(f'Server je dostupny')
+
+        for i in range(10):
+            sleep(0.5)
+            if not KEEP_ALIVE:
+                return
 
 def choose_fragment_size():
     print("Vyber velkost fragmentu 1-1467")
     size = int(input())
     global MAX_DATA_SIZE
-    MAX_DATA_SIZE = 1468
+    MAX_DATA_SIZE = 1466
     if size < 0:
         MAX_DATA_SIZE = 1
     elif size <= MAX_DATA_SIZE:
         MAX_DATA_SIZE = size
+
 
 def simulate_error(max_errors):
     print(f'Zadaj pocet chyb 0-{max_errors}')
@@ -89,45 +111,69 @@ def simulate_error(max_errors):
 
     return errors
 
-#fixme opravit swapovanie server klient
-#todo posielanie packet number do funkcii
-def server_loop(m_server):
-    server = m_server
-    server.my_socket.bind((server.serverAddressPort[0], server.serverAddressPort[1]))
+
+# fixme opravit swapovanie server klient
+def server_loop(server,serverAdd):
+    print(serverAdd)
     print("Bububu server")
-    global ZACIATOK_KOMUNIKACIE
-    while True:
+    try:
+        server.my_socket.bind(serverAdd)
         message, message_add = server.my_socket.recvfrom(1500)
-        if not ZACIATOK_KOMUNIKACIE:
-            my_header = build_header(2, 0, "")
-            server.my_socket.sendto(my_header, message_add)
-            ZACIATOK_KOMUNIKACIE = True
-            continue
+        print("ppci pripojene")
+        my_header = build_header(2, 0, "")
+        server.my_socket.sendto(my_header, message_add)
+    except socket.timeout:
+        server.my_socket.close()
 
-        crc = message[-2:]
-        crc = int.from_bytes(crc, 'little')
-        message = message[0:-2]
-        flag = int(chr(message[0]))
-        packet_num = message[1:2]
-        packet_num = int.from_bytes(packet_num, 'little')
-        finalMsg = message[3:]
+    global SWAPED
+    global ZACIATOK_KOMUNIKACIE
+    global KEEP_ALIVE
+    try:
+        while True:
+            if SWAPED:
+                sleep(1)
+                SWAPED = False
+            message, message_add = server.my_socket.recvfrom(1500)
+            # if not ZACIATOK_KOMUNIKACIE:
+            #
+            #     ZACIATOK_KOMUNIKACIE = True
+            #     continue
 
-        if flag == 5:
-            receive_text(finalMsg, server, message_add,crc)
+            crc = message[-2:]
+            crc = int.from_bytes(crc, 'little')
+            message = message[0:-2]
+            flag = int(chr(message[0]))
+            packet_num = message[1:3]
+            packet_num = int.from_bytes(packet_num, 'little')
+            finalMsg = message[4:]
+            if flag == 0:
+                my_header = build_header(2, packet_num, "")
+                server.my_socket.sendto(my_header, message_add)
 
-        if flag == 6:
-            receive_file(finalMsg, server, message_add)
-        if flag == 7:
-            my_header = build_header(2, 0, "")
-            server.my_socket.sendto(my_header, message_add)
-            client_loop(server)
+            elif flag == 5:
+                receive_text(finalMsg, server, message_add, crc)
+
+            elif flag == 6:
+                receive_file(finalMsg, server, message_add)
+            elif flag == 7:
+                SWAPED = True
+                KEEP_ALIVE = False
+                my_header = build_header(2, 0, "")
+                server.my_socket.sendto(my_header, message_add)
+                server.my_socket.close()
+                sleep(1)
+                client_loop(Client(serverAdd),serverAdd)
+
+    except socket.timeout:
+        print("Koniec bububu")
+        server.my_socket.close()
+        return
 
 
-
-def receive_text(textMsg, server, message_add,crc):
+def receive_text(textMsg, server, message_add, crc):
     textArray = []
     errors = 0
-    total_size = len(textMsg)+HLAVICKA
+    total_size = len(textMsg) + HLAVICKA
     number_of_fragments = 1
     check_crc = crc16(textMsg)
     if check_crc != crc:
@@ -138,12 +184,12 @@ def receive_text(textMsg, server, message_add,crc):
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
-        packet_num = message[1:2]
+        packet_num = message[1:3]
         packet_num = int.from_bytes(packet_num, 'little')
         print(f'packet number {packet_num} error True')
-        total_size += len(message[3:]) + HLAVICKA
-        if(crc16(message[3:])==crc):
-            textMsg=message[3:]
+        total_size += len(message[4:]) + HLAVICKA
+        if (crc16(message[4:]) == crc):
+            textMsg = message[4:]
             print(f'packet number {packet_num} error False')
             my_header = build_header(4, 0, "")
             server.my_socket.sendto(my_header, message_add)
@@ -151,14 +197,13 @@ def receive_text(textMsg, server, message_add,crc):
         my_header = build_header(4, 0, "")
         server.my_socket.sendto(my_header, message_add)
 
-
     textArray.append(textMsg.decode())
     while True:
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         message = message[0:-2]
-        packet_num = message[1:2]
+        packet_num = message[1:3]
         packet_num = int.from_bytes(packet_num, 'little')
 
         flag = int(chr(message[0]))
@@ -166,7 +211,7 @@ def receive_text(textMsg, server, message_add,crc):
             number_of_fragments += 1
             total_size += HLAVICKA
             break
-        check_crc = crc16(message[3:])
+        check_crc = crc16(message[4:])
 
         if check_crc != crc:
             my_header = build_header(3, packet_num, "")
@@ -174,13 +219,13 @@ def receive_text(textMsg, server, message_add,crc):
             server.my_socket.sendto(my_header, message_add)
             errors += 1
             print(f'packet number {packet_num} error True')
-            total_size += len(message[3:]) + HLAVICKA
+            total_size += len(message[4:]) + HLAVICKA
             continue
         else:
             print(f'packet number {packet_num} error False')
 
-        total_size += len(message[3:])+HLAVICKA
-        textArray.append(message[3:].decode())
+        total_size += len(message[4:]) + HLAVICKA
+        textArray.append(message[4:].decode())
         my_header = build_header(4, packet_num, "")
         server.my_socket.sendto(my_header, message_add)
         number_of_fragments += 1
@@ -189,11 +234,11 @@ def receive_text(textMsg, server, message_add,crc):
     server.my_socket.sendto(my_header, message_add)
     final_text = "".join(textArray)
     print(final_text)
-    print(f'Pocet prijatych fragmentov {number_of_fragments+errors}')
+    print(f'Pocet prijatych fragmentov {number_of_fragments + errors}')
     print(f'Celkova prijata velkost fragmentov {total_size}')
 
 
-#todo pridat Stop&Wait
+# todo pridat Stop&Wait
 # posielanie s chybami
 def receive_file(file, server, message_add):
     my_header = build_header(4, 0, "")
@@ -201,49 +246,47 @@ def receive_file(file, server, message_add):
     file_array = {}
     file_name = file.decode()
     number_of_fragments = 1
-    total_size = len(file_name)+HLAVICKA
+    total_size = len(file_name) + HLAVICKA
     errors = 0
     while True:
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         flag = int(chr(message[0]))
-        packet_num = message[1:2]
+        packet_num = message[1:3]
         packet_num = int.from_bytes(packet_num, 'little')
         if flag == 9:
-            number_of_fragments +=1
-            total_size+= HLAVICKA
+            number_of_fragments += 1
+            total_size += HLAVICKA
             break
-        check_crc = crc16(message[3:-2])
+        check_crc = crc16(message[4:-2])
 
         if check_crc != crc:
             my_header = build_header(3, packet_num, "")
             server.my_socket.sendto(my_header, message_add)
             errors += 1
             print(f'packet number {packet_num} error True')
-            total_size += len(message[3:-2]) + HLAVICKA
+            total_size += len(message[4:-2]) + HLAVICKA
             continue
         else:
             print(f'packet number {packet_num} error False')
 
         my_header = build_header(4, packet_num, "")
         server.my_socket.sendto(my_header, message_add)
-        partial_file = message[3:-2]
-        total_size += len(partial_file)+HLAVICKA
+        partial_file = message[4:-2]
+        total_size += len(partial_file) + HLAVICKA
         file_array[str(number_of_fragments)] = partial_file
         number_of_fragments += 1
 
     my_header = build_header(9, 0, "")
     server.my_socket.sendto(my_header, message_add)
 
-    print(f'Pocet prijatych fragmentov {number_of_fragments+errors}')
+    print(f'Pocet prijatych fragmentov {number_of_fragments + errors}')
     print(f'Celkova prijata velkost fragmentov {total_size}')
     fw = open("picovina.txt", 'wb+')
 
     for i in file_array.values():
         fw.write(i)
-
-
 
 
 def client_menu():
@@ -272,7 +315,7 @@ def send_file(file, client):
     if len(data) > MAX_DATA_SIZE:
         while True:
             if len(data) > MAX_DATA_SIZE:
-                max_error+=1
+                max_error += 1
                 fileArray.append(data[:MAX_DATA_SIZE])
                 data = data[MAX_DATA_SIZE:]
             else:
@@ -284,18 +327,18 @@ def send_file(file, client):
 
     error = simulate_error(max_error)
     with_error = 0
-    for index, value in enumerate(fileArray,start=1):
+    for index, value in enumerate(fileArray, start=1):
         if with_error >= error:
-            my_header = build_header(6, index, value,True)
+            my_header = build_header(6, index, value, True)
         else:
-            my_header = build_header(6, index, value,True,True)
-            with_error+=1
+            my_header = build_header(6, index, value, True, True)
+            with_error += 1
         client.my_socket.sendto(my_header, client.serverAddressPort)
         sleep(0.1)
         message, message_add = client.my_socket.recvfrom(1500)
         flag = int(chr(message[0]))
         if flag == 3:
-            my_header = build_header(6, index, value,True)
+            my_header = build_header(6, index, value, True)
             client.my_socket.sendto(my_header, client.serverAddressPort)
             message, message_add = client.my_socket.recvfrom(1500)
         fragments_to_send = index
@@ -320,17 +363,23 @@ def send_text(textMsg, client):
                 break
     else:
         textArray.append(textMsg)
-    error =simulate_error(len(textArray))
+    error = simulate_error(len(textArray))
 
     for index, value in enumerate(textArray):
         my_header = build_header(5, index, value)
-        if error>0:
-            error-=1
-            my_header = build_header(5, index, value,False,True)
+        if error > 0:
+            error -= 1
+            my_header = build_header(5, index, value, False, True)
 
         client.my_socket.sendto(my_header, client.serverAddressPort)
-        sleep(0.1)
-        message, message_add = client.my_socket.recvfrom(1500)
+        #sleep(0.1)
+        try:
+            client.my_socket.settimeout(2)
+            message, message_add = client.my_socket.recvfrom(1500)
+        except (ConnectionResetError, socket.timeout):
+            print("Server nepocuva")
+            continue
+
         flag = int(chr(message[0]))
         if flag == 3:
             my_header = build_header(5, index, value)
@@ -342,50 +391,90 @@ def send_text(textMsg, client):
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
-#fixme opravit klient na server
-def client_loop(m_client):
+
+SWAPED = False
+# fixme opravit klient na server
+def client_loop(client,clientAdd):
+    print(clientAdd)
+    #print(client.myaddr_port)
+    print(client.serverAddressPort)
+    global KEEP_ALIVE
     global ZACIATOK_KOMUNIKACIE
-    client = m_client
+    global SWAPED
+    KEEP_ALIVE = False
+    t1 = None
+    client.my_socket.settimeout(60)
+    try:
+        # client.my_socket.bind(clientAdd)
+        my_header = build_header(1, 0, "")
+        client.my_socket.sendto(my_header, clientAdd)
+        message, message_add = client.my_socket.recvfrom(1500)
+    except socket.timeout:
+        client.my_socket.close()
 
     while True:
 
-        if not ZACIATOK_KOMUNIKACIE:
-            my_header = build_header(1, 0, "")
-            client.my_socket.sendto(my_header, client.serverAddressPort)
-            message, message_add = client.my_socket.recvfrom(1500)
-            ZACIATOK_KOMUNIKACIE = True
-            continue
-        choice = client_menu()
-
-        if choice == "t":
-            print("Zadaj spravu")
-            textMsg = str(input())
-            choose_fragment_size()
-            send_text(textMsg, client)
-
-
-        elif choice == "f":
-            print("Zadaj subor")
-            file = str("testik.txt")
-            file_name = os.path.abspath(file)
-            print(file_name)
-            choose_fragment_size()
-            send_file(file, client)
-
-        elif choice == "s":
-            my_header = build_header(7, 0, "")
-            client.my_socket.sendto(my_header, client.serverAddressPort)
-            message, message_add = client.my_socket.recvfrom(1500)
+        if SWAPED:
             sleep(1)
-            server_loop(client)
+            SWAPED = False
+
+        if not KEEP_ALIVE:
+            t1 = threading.Thread(target=keep_alive, args=(client.my_socket, clientAdd))
+            t1.daemon=True
+            t1.start()
+            KEEP_ALIVE = True
+            continue
+
+        choice = client_menu()
+        try:
+            if choice == "t":
+                KEEP_ALIVE = False
+                t1.join()
+                print("Zadaj spravu")
+                textMsg = str(input())
+                choose_fragment_size()
+                send_text(textMsg, client)
+
+
+            elif choice == "f":
+                KEEP_ALIVE = False
+                t1.join()
+                print("Zadaj subor")
+                file = str("testik.txt")
+                file_name = os.path.abspath(file)
+                print(file_name)
+                choose_fragment_size()
+                send_file(file, client)
+
+            elif choice == "s":
+                KEEP_ALIVE = False
+                t1.join()
+                my_header = build_header(7, 0, "")
+                client.my_socket.sendto(my_header, message_add)
+                message, message_add = client.my_socket.recvfrom(1500)
+                SWAPED = True
+                client.my_socket.close()
+                sleep(1)
+                server_loop(Server(clientAdd),clientAdd)
+                return
+        except (ConnectionResetError, socket.timeout):
+            print("Server nepocuva")
+            continue
+
+def set_server():
+    server = Server(("localhost", 6000))
+    server_loop(server,("localhost", 6000))
+
+def set_client():
+        client = Client(("127.0.0.1", 6000))
+        client_loop(client, ("127.0.0.1", 6000))
 
 
 opt = str(input())
 
 if opt == "s":
-    server = Server(("127.0.0.1", 6000))
-    server_loop(server)
+    set_server()
 
 if opt == "c":
-    client = Client(("127.0.0.1", 6000))
-    client_loop(client)
+    set_client()
+
