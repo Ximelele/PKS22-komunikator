@@ -8,7 +8,7 @@ import threading
 # syn 1
 # ack 2
 # error 3
-# success 4
+# success 4 #maybe pouzivat 2ku
 # text 5
 # file 6
 # switch 7
@@ -97,9 +97,9 @@ def keep_alive(client, serverAddressPort):
 
 def choose_fragment_size():
     global MAX_DATA_SIZE
-    print(f"Vyber velkost fragmentu 1-{MAX_DATA_SIZE}")
+    print(f"Vyber velkost fragmentu 1-{1466}")
     size = int(input())
-    MAX_DATA_SIZE = 1466
+    # MAX_DATA_SIZE = 1466
     if size < 0:
         MAX_DATA_SIZE = 1
     elif size > MAX_DATA_SIZE:
@@ -118,19 +118,20 @@ def simulate_error(max_errors):
 def server_loop(server, serverAdd):
     print(serverAdd)
     print("Bububu server")
+
     try:
         server.my_socket.bind(serverAdd)
         message, message_add = server.my_socket.recvfrom(1500)
-        print("ppci pripojene")
         my_header = build_header(2, 0, "")
         server.my_socket.sendto(my_header, message_add)
     except socket.timeout:
         server.my_socket.close()
-
+    server.my_socket.settimeout(60)
     global SWAPED
     global ZACIATOK_KOMUNIKACIE
     global KEEP_ALIVE
     file_path = str(input("Zadaj kde chces ukladat subory"))
+
     try:
         while True:
             if SWAPED:
@@ -160,8 +161,13 @@ def server_loop(server, serverAdd):
                 my_header = build_header(2, 0, "")
                 server.my_socket.sendto(my_header, message_add)
                 server.my_socket.close()
-                sleep(1)
+                sleep(5)
                 client_loop(Client(serverAdd), serverAdd)
+            elif flag == 8:
+                my_header = build_header(2, 0, "")
+                server.my_socket.sendto(my_header, message_add)
+                print(f'Klient {message_add} sa odpojil')
+
 
     except socket.timeout:
         print("Koniec bububu")
@@ -418,9 +424,6 @@ SWAPED = False
 
 
 def client_loop(client, clientAdd):
-    print(clientAdd)
-    # print(client.myaddr_port)
-    print(client.serverAddressPort)
     global KEEP_ALIVE
     global ZACIATOK_KOMUNIKACIE
     global SWAPED
@@ -468,10 +471,21 @@ def client_loop(client, clientAdd):
                 print(file_name)
                 choose_fragment_size()
                 send_file(file, client)
+            elif choice == "e":
+                KEEP_ALIVE = False
+                t1.join()
+                my_header = build_header(8, 0, "")
+                client.my_socket.sendto(my_header, message_add)
+                sleep(2)
+                message, message_add = client.my_socket.recvfrom(1500)
+                client.my_socket.close()
+                sleep(1)
+                return
 
             elif choice == "s":
                 KEEP_ALIVE = False
                 t1.join()
+                sleep(5)
                 my_header = build_header(7, 0, "")
                 client.my_socket.sendto(my_header, message_add)
                 message, message_add = client.my_socket.recvfrom(1500)
@@ -480,6 +494,8 @@ def client_loop(client, clientAdd):
                 sleep(1)
                 server_loop(Server(clientAdd), clientAdd)
                 return
+            else:
+                print(f'Zla moznost')
         except (ConnectionResetError, socket.timeout):
             print("Server nepocuva")
             continue
