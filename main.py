@@ -502,17 +502,17 @@ def client_loop(client, clientAdd):
 
 
 def set_server():
-    # port = int(input("Zadaj port serveru"))
-    port = 6000
+    port = int(input("Zadaj port serveru"))
+    #port = 6000
     server = Server(("localhost", port))
     server_loop(server, ("localhost", port))
 
 
 def set_client():
-    # port = int(input("Zadaj port serveru"))
-    port = 6000
-    # ip = str(input("Zadaj ip klienta"))
-    ip = "127.0.0.1"
+    port = int(input("Zadaj port serveru"))
+    # port = 6000
+    ip = str(input("Zadaj ip klienta"))
+    # ip = "127.0.0.1"
     client = Client((ip, port))
     client_loop(client, (ip, port))
 
