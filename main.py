@@ -122,11 +122,12 @@ def server_loop(server, serverAdd):
     try:
         server.my_socket.bind(serverAdd)
         message, message_add = server.my_socket.recvfrom(1500)
+
         my_header = build_header(2, 0, "")
         server.my_socket.sendto(my_header, message_add)
     except socket.timeout:
         server.my_socket.close()
-    server.my_socket.settimeout(60)
+
     global SWAPED
     global ZACIATOK_KOMUNIKACIE
     global KEEP_ALIVE
@@ -151,17 +152,17 @@ def server_loop(server, serverAdd):
                 server.my_socket.sendto(my_header, message_add)
 
             elif flag == 5:
-                receive_text(finalMsg, server, message_add, crc,packet_num)
+                receive_text(finalMsg, server, message_add, crc, packet_num)
 
             elif flag == 6:
-                receive_file(finalMsg, server, message_add,file_path,packet_num)
+                receive_file(finalMsg, server, message_add, file_path, packet_num)
             elif flag == 7:
                 SWAPED = True
                 KEEP_ALIVE = False
                 my_header = build_header(2, 0, "")
                 server.my_socket.sendto(my_header, message_add)
+                server.my_socket.settimeout(60)
                 server.my_socket.close()
-                sleep(5)
                 client_loop(Client(serverAdd), serverAdd)
             elif flag == 8:
                 my_header = build_header(2, 0, "")
@@ -175,7 +176,7 @@ def server_loop(server, serverAdd):
         return
 
 
-def receive_text(textMsg, server, message_add, crc,packet_num):
+def receive_text(textMsg, server, message_add, crc, packet_num):
     textArray = []
     textDict = {}
     errors = 0
@@ -204,8 +205,8 @@ def receive_text(textMsg, server, message_add, crc,packet_num):
         server.my_socket.sendto(my_header, message_add)
 
     textArray.append(textMsg.decode())
-    textDict[packet_num]=textMsg.decode()
-    last_packet=0
+    textDict[packet_num] = textMsg.decode()
+    last_packet = 0
     while True:
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
@@ -250,7 +251,7 @@ def receive_text(textMsg, server, message_add, crc,packet_num):
 
 
 # posielanie s chybami
-def receive_file(file, server, message_add,file_path,packet_num):
+def receive_file(file, server, message_add, file_path, packet_num):
     my_header = build_header(4, 0, "")
     server.my_socket.sendto(my_header, message_add)
     file_array = {}
@@ -299,7 +300,7 @@ def receive_file(file, server, message_add,file_path,packet_num):
     print(f'Pocet prijatych fragmentov {number_of_fragments + errors}')
     print(f'Celkova prijata velkost fragmentov {total_size}')
 
-    final_name = file_path+file_name
+    final_name = file_path + file_name
     fw = open(final_name, 'wb+')
 
     for i in file_array.values():
@@ -326,6 +327,7 @@ def send_file(file, client):
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
     client.my_socket.sendto(my_header, client.serverAddressPort)
+
     message, message_add = client.my_socket.recvfrom(1500)
     global MAX_DATA_SIZE
 
@@ -370,6 +372,7 @@ def send_file(file, client):
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
+
 def send_text(textMsg, client):
     textArray = []
     fragments_to_send = 0
@@ -386,10 +389,7 @@ def send_text(textMsg, client):
     else:
         textArray.append(textMsg)
 
-
     error = simulate_error(len(textArray))
-
-
 
     try:
         for index, value in enumerate(textArray):
@@ -403,7 +403,6 @@ def send_text(textMsg, client):
 
             client.my_socket.settimeout(2)
             message, message_add = client.my_socket.recvfrom(1500)
-
 
             flag = int(chr(message[0]))
             if flag == 3:
@@ -429,14 +428,20 @@ def client_loop(client, clientAdd):
     global SWAPED
     KEEP_ALIVE = False
     t1 = None
-    client.my_socket.settimeout(60)
-    try:
-        # client.my_socket.bind(clientAdd)
-        my_header = build_header(1, 0, "")
-        client.my_socket.sendto(my_header, clientAdd)
-        message, message_add = client.my_socket.recvfrom(1500)
-    except socket.timeout:
-        client.my_socket.close()
+
+    while True:
+        try:
+            client.my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            # client.my_socket.bind(clientAdd)
+            my_header = build_header(1, 0, "")
+            client.my_socket.sendto(my_header, clientAdd)
+            client.my_socket.settimeout(60)
+            message, message_add = client.my_socket.recvfrom(1500)
+            if int(chr(message[0])) == 2:
+                break
+        except (socket.timeout, socket.gaierror,ConnectionResetError) as e:
+            print(e)
+            continue
 
     while True:
 
@@ -461,7 +466,7 @@ def client_loop(client, clientAdd):
                 choose_fragment_size()
                 send_text(textMsg, client)
 
-            #C:\Users\druzb\Desktop\
+            # C:\Users\druzb\Desktop\
             elif choice == "f":
                 KEEP_ALIVE = False
                 t1.join()
@@ -485,13 +490,13 @@ def client_loop(client, clientAdd):
             elif choice == "s":
                 KEEP_ALIVE = False
                 t1.join()
-                sleep(5)
+
                 my_header = build_header(7, 0, "")
                 client.my_socket.sendto(my_header, message_add)
                 message, message_add = client.my_socket.recvfrom(1500)
                 SWAPED = True
                 client.my_socket.close()
-                sleep(1)
+                sleep(2)
                 server_loop(Server(clientAdd), clientAdd)
                 return
             else:
@@ -503,16 +508,16 @@ def client_loop(client, clientAdd):
 
 def set_server():
     port = int(input("Zadaj port serveru"))
-    #port = 6000
-    server = Server(("localhost", port))
-    server_loop(server, ("localhost", port))
+    # port = 6000
+    server = Server(("", port))
+    server_loop(server, ("", port))
 
 
 def set_client():
     port = int(input("Zadaj port serveru"))
     # port = 6000
     ip = str(input("Zadaj ip klienta"))
-    # ip = "127.0.0.1"
+    # ip = "192.168.1.3"
     client = Client((ip, port))
     client_loop(client, (ip, port))
 
