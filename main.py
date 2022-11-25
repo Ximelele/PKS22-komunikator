@@ -163,7 +163,8 @@ def server_loop(server, serverAdd):
                 server.my_socket.sendto(my_header, message_add)
                 server.my_socket.settimeout(60)
                 server.my_socket.close()
-                client_loop(Client(serverAdd), serverAdd)
+                sleep(1)
+                client_loop(Client((message_add[0],serverAdd[1])), (message_add[0],serverAdd[1]))
             elif flag == 8:
                 my_header = build_header(2, 0, "")
                 server.my_socket.sendto(my_header, message_add)
@@ -471,7 +472,7 @@ def client_loop(client, clientAdd):
                 KEEP_ALIVE = False
                 t1.join()
                 print("Zadaj subor")
-                file = str(input("D:\Python projects\pks_komunikator\Mathematica_hnoj.zip"))
+                file = str(input("Vzor: D:\Python projects\pks_komunikator\Mathematica_hnoj.zip\n"))
                 file_name = os.path.abspath(file)
                 print(file_name)
                 choose_fragment_size()
@@ -496,8 +497,8 @@ def client_loop(client, clientAdd):
                 message, message_add = client.my_socket.recvfrom(1500)
                 SWAPED = True
                 client.my_socket.close()
-                sleep(2)
-                server_loop(Server(clientAdd), clientAdd)
+                sleep(1)
+                server_loop(Server(("",clientAdd[1])), ("",clientAdd[1]))
                 return
             else:
                 print(f'Zla moznost')
@@ -507,16 +508,16 @@ def client_loop(client, clientAdd):
 
 
 def set_server():
-    port = int(input("Zadaj port serveru"))
+    port = int(input("Zadaj port serveru "))
     # port = 6000
     server = Server(("", port))
     server_loop(server, ("", port))
 
 
 def set_client():
-    port = int(input("Zadaj port serveru"))
+    port = int(input("Zadaj port serveru "))
     # port = 6000
-    ip = str(input("Zadaj ip klienta"))
+    ip = str(input("Zadaj ip servera "))
     # ip = "192.168.1.3"
     client = Client((ip, port))
     client_loop(client, (ip, port))
