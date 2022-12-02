@@ -119,8 +119,8 @@ def choose_fragment_size():
     return size
 
 
-def simulate_error(max_errors):
-    print(f'Zadaj pocet chyb 0-{max_errors}')
+def simulate_error():
+    print(f'Chces simulovat chybu? 0-1')
     errors = int(input())
 
     return errors
@@ -189,51 +189,34 @@ def server_loop(server, serverAdd):
 
 
 def receive_text(textMsg, server, message_add, crc, packet_num):
+    first = True
     textArray = []
-    textDict = {}
     errors = 0
-    total_size = len(textMsg) + HLAVICKA
-    number_of_fragments = 1
-    check_crc = crc16(textMsg)
-    if check_crc != crc:
-        my_header = build_header(3, packet_num, "")
-        server.my_socket.sendto(my_header, message_add)
-        errors += 1
-        message, message_add = server.my_socket.recvfrom(1500)
-        crc = message[-2:]
-        crc = int.from_bytes(crc, 'little')
-        message = message[0:-2]
-        packet_num = message[1:3]
-        packet_num = int.from_bytes(packet_num, 'little')
-        print(f'packet number {packet_num} error True')
-        total_size += len(message[4:]) + HLAVICKA
-        if (crc16(message[4:]) == crc):
-            textMsg = message[4:]
-            print(f'packet number {packet_num} error False')
-            my_header = build_header(4, packet_num, "")
-            server.my_socket.sendto(my_header, message_add)
-    else:
-        my_header = build_header(4, packet_num, "")
-        server.my_socket.sendto(my_header, message_add)
-
-    textArray.append(textMsg.decode())
-    textDict[packet_num] = textMsg.decode()
+    total_size = 0
+    number_of_fragments = 0
     last_packet = 0
     while True:
-        message, message_add = server.my_socket.recvfrom(1500)
-        crc = message[-2:]
-        crc = int.from_bytes(crc, 'little')
-        message = message[0:-2]
-        packet_num = message[1:3]
-        packet_num = int.from_bytes(packet_num, 'little')
+        if not first:
+            message, message_add = server.my_socket.recvfrom(1500)
+            crc = message[-2:]
+            crc = int.from_bytes(crc, 'little')
+            message = message[0:-2]
+            packet_num = message[1:3]
+            packet_num = int.from_bytes(packet_num, 'little')
 
-        flag = int(chr(message[0]))
-        if flag == 9:
-            last_packet = packet_num
-            number_of_fragments += 1
-            total_size += HLAVICKA
-            break
-        check_crc = crc16(message[4:])
+            flag = int(chr(message[0]))
+            if flag == 0:
+                continue
+            if flag == 9:
+                last_packet = packet_num
+                number_of_fragments += 1
+                total_size += HLAVICKA
+                break
+
+        if first:
+            check_crc = crc16(textMsg)
+        else:
+            check_crc = crc16(message[4:])
 
         if check_crc != crc:
             my_header = build_header(3, packet_num, "")
@@ -241,14 +224,23 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
             server.my_socket.sendto(my_header, message_add)
             errors += 1
             print(f'packet number {packet_num} error True')
-            total_size += len(message[4:]) + HLAVICKA
+            if first:
+                total_size += len(textMsg) + HLAVICKA
+                first = False
+            else:
+                total_size += len(message[4:]) + HLAVICKA
             continue
         else:
             print(f'packet number {packet_num} error False')
 
-        total_size += len(message[4:]) + HLAVICKA
-        textArray.append(message[4:].decode())
-        textDict[packet_num] = message[4:].decode()
+        if first:
+            total_size += len(textMsg) + HLAVICKA
+            textArray.append(textMsg.decode())
+        else:
+            total_size += len(message[4:]) + HLAVICKA
+            textArray.append(message[4:].decode())
+        first = False
+
         my_header = build_header(4, packet_num, "")
         server.my_socket.sendto(my_header, message_add)
         number_of_fragments += 1
@@ -337,7 +329,7 @@ def send_file(file, client):
     data = f.read()
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
-    #posielam nazov suboru
+    # posielam nazov suboru
     client.my_socket.settimeout(10)
     try:
         client.my_socket.sendto(my_header, client.serverAddressPort)
@@ -347,14 +339,14 @@ def send_file(file, client):
         return
 
     flag = int(chr(message[0]))
-    #POJEBANY KEEPALIVE
-    if(flag==2):
-        while flag!= 4:
+    # POJEBANY KEEPALIVE
+    if (flag == 2):
+        while flag != 4:  # tento krok si mozem dovolit lebo file name poslem vzdy bez chyby
             message, message_add = client.my_socket.recvfrom(1500)
             flag = int(chr(message[0]))
     max_data = choose_fragment_size()
 
-    error = simulate_error(1)
+    error = simulate_error()
     index = 1
     try:
         while len(data) > 0:
@@ -366,13 +358,12 @@ def send_file(file, client):
 
             client.my_socket.sendto(my_header, client.serverAddressPort)
             client.my_socket.settimeout(10)
-            sleep(0.1)
+
             message, message_add = client.my_socket.recvfrom(1500)
             flag = int(chr(message[0]))
             if flag == 3:
-                print("pojebte sa")
-
-            else :
+                continue
+            else:
                 data = data[max_data:]
                 index += 1
 
@@ -387,49 +378,40 @@ def send_file(file, client):
 
 def send_text(textMsg, client):
     max_data = choose_fragment_size()
-    textArray = []
-    fragments_to_send = 0
-    text_len = len(textMsg)
 
-    if text_len > max_data:
-        while True:
-            if len(textMsg) > max_data:
-                textArray.append(textMsg[:max_data])
-                textMsg = textMsg[max_data:]
-            else:
-                textArray.append(textMsg[:len(textMsg)])
-                break
-    else:
-        textArray.append(textMsg)
-
-    error = simulate_error(4)
-
+    error = simulate_error()
+    index = 0
     try:
-        for index, value in enumerate(textArray):
-            my_header = build_header(5, index, value)
-            if error > 0:
+        while len(textMsg)>0:
+
+            if error:
                 error -= 1
-                my_header = build_header(5, index, value, False, True)
+                my_header = build_header(5, index, textMsg[:max_data], False, True)
+            else:
+                my_header = build_header(5, index, textMsg[:max_data])
 
             client.my_socket.sendto(my_header, client.serverAddressPort)
-            sleep(0.05)
-
+            # sleep(0.1)
             client.my_socket.settimeout(10)
             message, message_add = client.my_socket.recvfrom(1500)
 
             flag = int(chr(message[0]))
+            if flag == 2:
+                while flag == 2:
+                    message, message_add = client.my_socket.recvfrom(1500)
+                    flag = int(chr(message[0]))
+            print(f'flag {flag}')
             if flag == 3:
-                my_header = build_header(5, index, value)
-                client.my_socket.sendto(my_header, client.serverAddressPort)
-                client.my_socket.settimeout(10)
-                sleep(0.05)
-                message, message_add = client.my_socket.recvfrom(1500)
-            fragments_to_send = index
+                continue
+            else:
+                index+=1
+                textMsg=textMsg[max_data:]
+
     except (ConnectionResetError, socket.timeout):
         print("Nedostupny server")
         return
 
-    my_header = build_header(9, (fragments_to_send + 1), "")
+    my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
@@ -468,7 +450,7 @@ def client_loop(client, clientAdd):
         if not KEEP_ALIVE:
             if koniec:
                 t1.join(0.5)
-                client.my_socket.close()
+                return
             t1 = threading.Thread(target=keep_alive, args=(client.my_socket, clientAdd))
             t1.daemon = True
             t1.start()
