@@ -85,13 +85,13 @@ def keep_alive(client, serverAddressPort):
 
         client.sendto(my_header, serverAddressPort)
         try:
-            client.settimeout(0.1)
+            client.settimeout(5)
             message, message_add = client.recvfrom(1500)
         except (ConnectionResetError, socket.timeout):
-            if (end_count == 5):
+            if end_count == 5:
                 koniec = True
-                print(f'KA sa uz neposiela')
                 break
+
             end_count += 1
             print(f'Server je nedostupny')
         else:
@@ -99,11 +99,13 @@ def keep_alive(client, serverAddressPort):
             print(f'Server je dostupny')
 
         for i in range(5):
-            sleep(0.5)
+            sleep(1)
             if not KEEP_ALIVE:
                 return
+    if koniec:
+        print("Klient sa vypina - stlacte enter")
+        quit()
 
-    return
 
 
 def choose_fragment_size():
@@ -129,7 +131,7 @@ def simulate_error():
 def server_loop(server, serverAdd):
     print(serverAdd)
     print("Bububu server")
-
+    server.my_socket.settimeout(60)
     try:
         server.my_socket.bind(serverAdd)
         message, message_add = server.my_socket.recvfrom(1500)
@@ -184,6 +186,7 @@ def server_loop(server, serverAdd):
 
     except socket.timeout:
         print("Koniec bububu")
+        sleep(3)
         server.my_socket.close()
         return
 
@@ -423,7 +426,6 @@ def client_loop(client, clientAdd):
     global KEEP_ALIVE
     global ZACIATOK_KOMUNIKACIE
     global SWAPED
-    global koniec
     KEEP_ALIVE = False
     t1 = None
 
@@ -448,9 +450,6 @@ def client_loop(client, clientAdd):
             SWAPED = False
 
         if not KEEP_ALIVE:
-            if koniec:
-                t1.join(0.5)
-                return
             t1 = threading.Thread(target=keep_alive, args=(client.my_socket, clientAdd))
             t1.daemon = True
             t1.start()
@@ -523,13 +522,18 @@ def set_client():
     client_loop(client, (ip, port))
 
 
+
 while True:
+    print("Zadaj s pre server a c pre klienta: ")
     opt = str(input())
     if opt == "s":
+        os.system('cls')
+
         set_server()
         break
 
     if opt == "c":
+        os.system('cls')
         set_client()
         break
     print(f'Zla moznost')
