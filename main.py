@@ -107,7 +107,6 @@ def keep_alive(client, serverAddressPort):
         quit()
 
 
-
 def choose_fragment_size():
     global MAX_DATA_SIZE
     print(f"Vyber velkost fragmentu 1-{1466}")
@@ -226,7 +225,7 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
 
             server.my_socket.sendto(my_header, message_add)
             errors += 1
-            print(f'packet number {packet_num} error True')
+            print(f'Prijaty packet: {packet_num} Chyba: False')
             if first:
                 total_size += len(textMsg) + HLAVICKA
                 first = False
@@ -234,7 +233,7 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
                 total_size += len(message[4:]) + HLAVICKA
             continue
         else:
-            print(f'packet number {packet_num} error False')
+            print(f'Prijaty packet: {packet_num} Chyba: False')
 
         if first:
             total_size += len(textMsg) + HLAVICKA
@@ -264,7 +263,7 @@ def receive_file(file, server, message_add, file_path, packet_num):
     file_name = file.decode()
     file_name = file_name.rsplit('\\')[-1]
     file_name = "1" + file_name
-    print(file_name)
+    # print(file_name)
     number_of_fragments = 1
     total_size = len(file_name) + HLAVICKA
     errors = 0
@@ -289,11 +288,11 @@ def receive_file(file, server, message_add, file_path, packet_num):
             server.my_socket.sendto(my_header, message_add)
 
             errors += 1
-            print(f'packet number {packet_num} error True')
+            print(f'Prijaty packet: {packet_num} Chyba: True')
             total_size += len(message[4:-2]) + HLAVICKA
             continue
         else:
-            print(f'packet number {packet_num} error False')
+            print(f'Prijaty packet: {packet_num} Chyba: False')
 
         my_header = build_header(4, packet_num, "")
 
@@ -321,6 +320,7 @@ def client_menu():
     menu = "t - textova sprava\n"
     menu += "f - poslat subor\n"
     menu += "s - zmenit strany\n"
+    menu += "v - vycistit obrazovku\n"
     menu += "e - ukonci\n"
     print(menu)
 
@@ -385,7 +385,7 @@ def send_text(textMsg, client):
     error = simulate_error()
     index = 0
     try:
-        while len(textMsg)>0:
+        while len(textMsg) > 0:
 
             if error:
                 error -= 1
@@ -403,12 +403,11 @@ def send_text(textMsg, client):
                 while flag == 2:
                     message, message_add = client.my_socket.recvfrom(1500)
                     flag = int(chr(message[0]))
-            print(f'flag {flag}')
             if flag == 3:
                 continue
             else:
-                index+=1
-                textMsg=textMsg[max_data:]
+                index += 1
+                textMsg = textMsg[max_data:]
 
     except (ConnectionResetError, socket.timeout):
         print("Nedostupny server")
@@ -432,7 +431,6 @@ def client_loop(client, clientAdd):
     while True:
         try:
             client.my_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            # client.my_socket.bind(clientAdd)
             my_header = build_header(1, 0, "")
             client.my_socket.sendto(my_header, clientAdd)
             client.my_socket.settimeout(10)
@@ -473,7 +471,7 @@ def client_loop(client, clientAdd):
                 print("Zadaj subor")
                 file = str(input("Vzor: D:\Python projects\pks_komunikator\Mathematica_hnoj.zip\n"))
                 file_name = os.path.abspath(file)
-                print(file_name)
+                # print(file_name)
                 sleep(1)
                 send_file(file, client)
             elif choice == "e":
@@ -499,6 +497,8 @@ def client_loop(client, clientAdd):
                 sleep(1)
                 server_loop(Server(("", clientAdd[1])), ("", clientAdd[1]))
                 return
+            elif choice == "v":
+                os.system('cls')
             else:
                 print(f'Zla moznost')
         except (ConnectionResetError, socket.timeout):
@@ -507,33 +507,31 @@ def client_loop(client, clientAdd):
 
 
 def set_server():
-    # port = int(input("Zadaj port serveru "))
-    port = 6000
+    port = int(input("Zadaj port serveru "))
+    # port = 6000
+    os.system('cls')
     server = Server(("", port))
     server_loop(server, ("", port))
 
 
 def set_client():
-    # port = int(input("Zadaj port serveru "))
-    port = 6000
-    # ip = str(input("Zadaj ip servera "))
-    ip = "127.0.0.1"
+    port = int(input("Zadaj port serveru "))
+    # port = 6000
+    ip = str(input("Zadaj ip servera "))
+    # ip = "127.0.0.1"
+    os.system('cls')
     client = Client((ip, port))
     client_loop(client, (ip, port))
-
 
 
 while True:
     print("Zadaj s pre server a c pre klienta: ")
     opt = str(input())
     if opt == "s":
-        os.system('cls')
-
         set_server()
         break
 
     if opt == "c":
-        os.system('cls')
         set_client()
         break
     print(f'Zla moznost')
