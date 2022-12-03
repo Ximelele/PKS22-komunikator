@@ -49,7 +49,7 @@ def crc16(data: bytes):
     return reg ^ xor_out
 
 
-def build_header(flag, packet_number, data, file=False, error=False):
+def build_header(flag : int, packet_number : int, data, file=False, error=False):
     if file:
         crc = crc16(data)
     else:
@@ -75,7 +75,7 @@ KEEP_ALIVE = False
 koniec = False
 
 
-def keep_alive(client, serverAddressPort):
+def keep_alive(client, serverAddressPort: tuple):
     global KEEP_ALIVE
     global koniec
     sleep(0.1)
@@ -127,7 +127,7 @@ def simulate_error():
     return errors
 
 
-def server_loop(server, serverAdd):
+def server_loop(server: Server, serverAdd: tuple):
     print(serverAdd)
     print("Bububu server")
     server.my_socket.settimeout(60)
@@ -167,7 +167,7 @@ def server_loop(server, serverAdd):
                 receive_text(finalMsg, server, message_add, crc, packet_num)
 
             elif flag == 6:
-                receive_file(finalMsg, server, message_add, file_path, packet_num)
+                receive_file(finalMsg, server, message_add, file_path)
             elif flag == 7:
                 SWAPED = True
                 KEEP_ALIVE = False
@@ -190,13 +190,13 @@ def server_loop(server, serverAdd):
         return
 
 
-def receive_text(textMsg, server, message_add, crc, packet_num):
-    first = True
-    textArray = []
-    errors = 0
-    total_size = 0
-    number_of_fragments = 0
-    last_packet = 0
+def receive_text(textMsg: str, server: Server, message_add: tuple, crc: int, packet_num: int):
+    first : bool = True
+    textArray : list = []
+    errors : int = 0
+    total_size : int = 0
+    number_of_fragments : int = 0
+    last_packet : int = 0
     while True:
         if not first:
             message, message_add = server.my_socket.recvfrom(1500)
@@ -225,7 +225,7 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
 
             server.my_socket.sendto(my_header, message_add)
             errors += 1
-            print(f'Prijaty packet: {packet_num} Chyba: False')
+            print(f'Prijaty packet: {packet_num} Chyba: True')
             if first:
                 total_size += len(textMsg) + HLAVICKA
                 first = False
@@ -256,7 +256,7 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
 
 
 # posielanie s chybami
-def receive_file(file, server, message_add, file_path, packet_num):
+def receive_file(file : bytes, server : Server, message_add : tuple, file_path : str):
     my_header = build_header(4, 0, "")
     server.my_socket.sendto(my_header, message_add)
     file_array = {}
@@ -327,7 +327,7 @@ def client_menu():
     return str(input())
 
 
-def send_file(file, client):
+def send_file(file : str, client : Client):
     f = open(file, 'rb+')
     data = f.read()
     my_header = build_header(6, 0, file)
@@ -379,7 +379,7 @@ def send_file(file, client):
     message, message_add = client.my_socket.recvfrom(1500)
 
 
-def send_text(textMsg, client):
+def send_text(textMsg : str, client : Client):
     max_data = choose_fragment_size()
 
     error = simulate_error()
@@ -421,7 +421,7 @@ def send_text(textMsg, client):
 SWAPED = False
 
 
-def client_loop(client, clientAdd):
+def client_loop(client: Client, clientAdd: tuple):
     global KEEP_ALIVE
     global ZACIATOK_KOMUNIKACIE
     global SWAPED
