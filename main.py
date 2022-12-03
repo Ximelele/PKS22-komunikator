@@ -203,7 +203,7 @@ def receive_text(textMsg, server, message_add, crc, packet_num):
             crc = message[-2:]
             crc = int.from_bytes(crc, 'little')
             message = message[0:-2]
-            packet_num = message[1:3]
+            packet_num = message[1:4]
             packet_num = int.from_bytes(packet_num, 'little')
 
             flag = int(chr(message[0]))
@@ -273,7 +273,7 @@ def receive_file(file, server, message_add, file_path, packet_num):
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
         flag = int(chr(message[0]))
-        packet_num = message[1:3]
+        packet_num = message[1:4]
         packet_num = int.from_bytes(packet_num, 'little')
         if flag == 9:
             last_packet = packet_num
