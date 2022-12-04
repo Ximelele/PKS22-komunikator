@@ -29,7 +29,7 @@ class Client:
 
 
 # https://stackoverflow.com/questions/35205702/calculating-crc16-in-python
-def crc16(data: bytes):
+def crc16(data: bytes) -> int:
     xor_in = 0x0000  # initial value
     xor_out = 0x0000  # final XOR value
     poly = 0x8005  # generator polinom (normal form)
@@ -49,7 +49,7 @@ def crc16(data: bytes):
     return reg ^ xor_out
 
 
-def build_header(flag: int, packet_number: int, data, file=False, error=False):
+def build_header(flag: int, packet_number: int, data, file=False, error=False) -> bytes:
     if file:
         crc = crc16(data)
     else:
@@ -67,19 +67,17 @@ def build_header(flag: int, packet_number: int, data, file=False, error=False):
     return my_header
 
 
-ZACIATOK_KOMUNIKACIE = False
-MAX_DATA_SIZE = 1466
-HLAVICKA = 6
-KEEP_ALIVE = False
-
-koniec = False
+ZACIATOK_KOMUNIKACIE: bool = False
+MAX_DATA_SIZE: int = 1466
+HLAVICKA: int = 6
+KEEP_ALIVE: bool = False
 
 
 def keep_alive(client, serverAddressPort: tuple):
     global KEEP_ALIVE
-    global koniec
+    not_listening: bool = False
     sleep(0.1)
-    end_count = 0
+    end_count: int = 0
     while True:
         my_header = build_header(0, 0, "")
 
@@ -89,7 +87,7 @@ def keep_alive(client, serverAddressPort: tuple):
             message, message_add = client.recvfrom(1500)
         except (ConnectionResetError, socket.timeout):
             if end_count == 5:
-                koniec = True
+                not_listening = True
                 break
 
             end_count += 1
@@ -102,12 +100,12 @@ def keep_alive(client, serverAddressPort: tuple):
             sleep(1)
             if not KEEP_ALIVE:
                 return
-    if koniec:
+    if not_listening:
         print("Klient sa vypina - stlacte enter")
         quit()
 
 
-def choose_fragment_size():
+def choose_fragment_size() -> int:
     global MAX_DATA_SIZE
     print(f"Vyber velkost fragmentu 1-{1466}")
     size = int(input())
@@ -120,7 +118,7 @@ def choose_fragment_size():
     return size
 
 
-def simulate_error():
+def simulate_error() -> int:
     print(f'Chces simulovat chybu? 0-1')
     errors = int(input())
 
@@ -259,15 +257,15 @@ def receive_text(textMsg: str, server: Server, message_add: tuple, crc: int, pac
 def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str):
     my_header = build_header(4, 0, "")
     server.my_socket.sendto(my_header, message_add)
-    file_array = {}
-    file_name = file.decode()
+    file_array: dict = {}
+    file_name: str = file.decode()
     file_name = file_name.rsplit('\\')[-1]
     file_name = "1" + file_name
     # print(file_name)
-    number_of_fragments = 1
-    total_size = len(file_name) + HLAVICKA
-    errors = 0
-    last_packet = 0
+    number_of_fragments: int = 1
+    total_size: int = len(file_name) + HLAVICKA
+    errors: int = 0
+    last_packet: int = 0
     while True:
         server.my_socket.settimeout(20)
         message, message_add = server.my_socket.recvfrom(1500)
@@ -317,7 +315,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     print(f'Subor bol ulozeny v {os.path.abspath(file_name)}')
 
 
-def client_menu():
+def client_menu() -> str:
     menu = "t - textova sprava\n"
     menu += "f - poslat subor\n"
     menu += "s - zmenit strany\n"
@@ -330,7 +328,7 @@ def client_menu():
 
 def send_file(file: str, client: Client):
     f = open(file, 'rb+')
-    data = f.read()
+    data: bytes = f.read()
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
     # posielam nazov suboru
@@ -342,16 +340,16 @@ def send_file(file: str, client: Client):
         print("Nedostupny server")
         return
 
-    flag = int(chr(message[0]))
+    flag: int = int(chr(message[0]))
     # POJEBANY KEEPALIVE
     if (flag == 2):
         while flag != 4:  # tento krok si mozem dovolit lebo file name poslem vzdy bez chyby
             message, message_add = client.my_socket.recvfrom(1500)
-            flag = int(chr(message[0]))
-    max_data = choose_fragment_size()
+            flag: int = int(chr(message[0]))
+    max_data: int = choose_fragment_size()
 
-    error = simulate_error()
-    index = 1
+    error: int = simulate_error()
+    index: int = 1
     separated_counter: int = 0
     while len(data) > 0:
         if error:
@@ -378,17 +376,16 @@ def send_file(file: str, client: Client):
             data = data[max_data:]
             index += 1
 
-
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
 
 def send_text(textMsg: str, client: Client):
-    max_data = choose_fragment_size()
+    max_data: int = choose_fragment_size()
 
-    error = simulate_error()
-    index = 0
+    error: int = simulate_error()
+    index: int = 0
     separated_counter: int = 0
     while len(textMsg) > 0:
 
@@ -428,7 +425,7 @@ def send_text(textMsg: str, client: Client):
     message, message_add = client.my_socket.recvfrom(1500)
 
 
-SWAPED = False
+SWAPED: bool = False
 
 
 def client_loop(client: Client, clientAdd: tuple):
@@ -517,26 +514,26 @@ def client_loop(client: Client, clientAdd: tuple):
 
 
 def set_server():
-    port = int(input("Zadaj port serveru "))
+    port: int = int(input("Zadaj port serveru "))
     # port = 6000
     os.system('cls')
-    server = Server(("", port))
+    server: Server = Server(("", port))
     server_loop(server, ("", port))
 
 
 def set_client():
-    port = int(input("Zadaj port serveru "))
+    port: int = int(input("Zadaj port serveru "))
     # port = 6000
-    ip = str(input("Zadaj ip servera "))
+    ip: str = str(input("Zadaj ip servera "))
     # ip = "127.0.0.1"
     os.system('cls')
-    client = Client((ip, port))
+    client: Client = Client((ip, port))
     client_loop(client, (ip, port))
 
 
 while True:
     print("Zadaj s pre server a c pre klienta: ")
-    opt = str(input())
+    opt: str = str(input())
     if opt == "s":
         set_server()
         break
