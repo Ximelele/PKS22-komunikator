@@ -49,7 +49,7 @@ def crc16(data: bytes):
     return reg ^ xor_out
 
 
-def build_header(flag : int, packet_number : int, data, file=False, error=False):
+def build_header(flag: int, packet_number: int, data, file=False, error=False):
     if file:
         crc = crc16(data)
     else:
@@ -191,12 +191,12 @@ def server_loop(server: Server, serverAdd: tuple):
 
 
 def receive_text(textMsg: str, server: Server, message_add: tuple, crc: int, packet_num: int):
-    first : bool = True
-    textArray : list = []
-    errors : int = 0
-    total_size : int = 0
-    number_of_fragments : int = 0
-    last_packet : int = 0
+    first: bool = True
+    textArray: list = []
+    errors: int = 0
+    total_size: int = 0
+    number_of_fragments: int = 0
+    last_packet: int = 0
     while True:
         if not first:
             message, message_add = server.my_socket.recvfrom(1500)
@@ -256,7 +256,7 @@ def receive_text(textMsg: str, server: Server, message_add: tuple, crc: int, pac
 
 
 # posielanie s chybami
-def receive_file(file : bytes, server : Server, message_add : tuple, file_path : str):
+def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str):
     my_header = build_header(4, 0, "")
     server.my_socket.sendto(my_header, message_add)
     file_array = {}
@@ -269,6 +269,7 @@ def receive_file(file : bytes, server : Server, message_add : tuple, file_path :
     errors = 0
     last_packet = 0
     while True:
+        server.my_socket.settimeout(20)
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
@@ -327,7 +328,7 @@ def client_menu():
     return str(input())
 
 
-def send_file(file : str, client : Client):
+def send_file(file: str, client: Client):
     f = open(file, 'rb+')
     data = f.read()
     my_header = build_header(6, 0, file)
@@ -351,67 +352,76 @@ def send_file(file : str, client : Client):
 
     error = simulate_error()
     index = 1
-    try:
-        while len(data) > 0:
-            if error:
-                my_header = build_header(6, index, data[:max_data], True, True)
-                error -= 1
-            else:
-                my_header = build_header(6, index, data[:max_data], True)
-
+    separated_counter: int = 0
+    while len(data) > 0:
+        if error:
+            my_header = build_header(6, index, data[:max_data], True, True)
+            error -= 1
+        else:
+            my_header = build_header(6, index, data[:max_data], True)
+        try:
             client.my_socket.sendto(my_header, client.serverAddressPort)
-            client.my_socket.settimeout(10)
+        except (ConnectionResetError, socket.timeout):
+            print("Nedostupny server")
+            if separated_counter == 5:
+                print("Spojenie bude ukoncene")
+                quit()
+            separated_counter += 1
+            sleep(2)
+            continue
+        separated_counter = 0
+        message, message_add = client.my_socket.recvfrom(1500)
+        flag = int(chr(message[0]))
+        if flag == 3:
+            continue
+        else:
+            data = data[max_data:]
+            index += 1
 
-            message, message_add = client.my_socket.recvfrom(1500)
-            flag = int(chr(message[0]))
-            if flag == 3:
-                continue
-            else:
-                data = data[max_data:]
-                index += 1
-
-    except (ConnectionResetError, socket.timeout):
-        print("Nedostupny server")
-        return
 
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
 
-def send_text(textMsg : str, client : Client):
+def send_text(textMsg: str, client: Client):
     max_data = choose_fragment_size()
 
     error = simulate_error()
     index = 0
-    try:
-        while len(textMsg) > 0:
+    separated_counter: int = 0
+    while len(textMsg) > 0:
 
-            if error:
-                error -= 1
-                my_header = build_header(5, index, textMsg[:max_data], False, True)
-            else:
-                my_header = build_header(5, index, textMsg[:max_data])
-
+        if error:
+            error -= 1
+            my_header = build_header(5, index, textMsg[:max_data], False, True)
+        else:
+            my_header = build_header(5, index, textMsg[:max_data])
+        try:
             client.my_socket.sendto(my_header, client.serverAddressPort)
             # sleep(0.1)
-            client.my_socket.settimeout(10)
-            message, message_add = client.my_socket.recvfrom(1500)
+        except (ConnectionResetError, socket.timeout):
+            print("Nedostupny server")
+            if separated_counter == 5:
+                print("Spojenie bude ukoncene")
+                quit()
+            separated_counter += 1
+            sleep(2)
+            continue
+        separated_counter = 0
+        client.my_socket.settimeout(10)
+        message, message_add = client.my_socket.recvfrom(1500)
 
-            flag = int(chr(message[0]))
-            if flag == 2:
-                while flag == 2:
-                    message, message_add = client.my_socket.recvfrom(1500)
-                    flag = int(chr(message[0]))
-            if flag == 3:
-                continue
-            else:
-                index += 1
-                textMsg = textMsg[max_data:]
-
-    except (ConnectionResetError, socket.timeout):
-        print("Nedostupny server")
-        return
+        flag = int(chr(message[0]))
+        if flag == 2:
+            while flag == 2:
+                message, message_add = client.my_socket.recvfrom(1500)
+                flag = int(chr(message[0]))
+        if flag == 3:
+            continue
+        else:
+            index += 1
+            textMsg = textMsg[max_data:]
 
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
