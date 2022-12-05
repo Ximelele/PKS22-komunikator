@@ -71,11 +71,11 @@ ZACIATOK_KOMUNIKACIE: bool = False
 MAX_DATA_SIZE: int = 1466
 HLAVICKA: int = 6
 KEEP_ALIVE: bool = False
-
+UKONCENIE_KEEP_ALIVE: bool = False
 
 def keep_alive(client, serverAddressPort: tuple):
     global KEEP_ALIVE
-    not_listening: bool = False
+    global UKONCENIE_KEEP_ALIVE
     sleep(0.1)
     end_count: int = 0
     while True:
@@ -87,7 +87,7 @@ def keep_alive(client, serverAddressPort: tuple):
             message, message_add = client.recvfrom(1500)
         except (ConnectionResetError, socket.timeout):
             if end_count == 5:
-                not_listening = True
+                UKONCENIE_KEEP_ALIVE = True
                 break
 
             end_count += 1
@@ -100,7 +100,7 @@ def keep_alive(client, serverAddressPort: tuple):
             sleep(1)
             if not KEEP_ALIVE:
                 return
-    if not_listening:
+    if UKONCENIE_KEEP_ALIVE:
         print("Klient sa vypina - stlacte enter")
         quit()
 
@@ -313,6 +313,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     for i in file_array.values():
         fw.write(i)
     print(f'Subor bol ulozeny v {os.path.abspath(file_name)}')
+    print(f'Velkost suboru {os.path.getsize(final_name)}')
 
 
 def client_menu() -> str:
@@ -328,6 +329,7 @@ def client_menu() -> str:
 
 def send_file(file: str, client: Client):
     f = open(file, 'rb+')
+    print(f'Velkost suboru {os.path.getsize(file)}')
     data: bytes = f.read()
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
@@ -372,16 +374,19 @@ def send_file(file: str, client: Client):
         flag = int(chr(message[0]))
         if flag == 3:
             continue
-        else:
+        elif flag == 4:
             data = data[max_data:]
             index += 1
+        else:
+            continue
 
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
 
 
-def send_text(textMsg: str, client: Client):
+def send_text(textMsg, client: Client):
+    textMsg = str(textMsg)
     max_data: int = choose_fragment_size()
 
     error: int = simulate_error()
@@ -416,9 +421,11 @@ def send_text(textMsg: str, client: Client):
                 flag = int(chr(message[0]))
         if flag == 3:
             continue
-        else:
+        elif flag == 4:
             index += 1
             textMsg = textMsg[max_data:]
+        else:
+            continue
 
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
@@ -431,6 +438,7 @@ SWAPED: bool = False
 def client_loop(client: Client, clientAdd: tuple):
     global KEEP_ALIVE
     global ZACIATOK_KOMUNIKACIE
+    global UKONCENIE_KEEP_ALIVE
     global SWAPED
     KEEP_ALIVE = False
     t1 = None
@@ -460,6 +468,8 @@ def client_loop(client: Client, clientAdd: tuple):
             t1.start()
             KEEP_ALIVE = True
             continue
+        if UKONCENIE_KEEP_ALIVE:
+            exit()
 
         choice = client_menu()
 
@@ -467,7 +477,8 @@ def client_loop(client: Client, clientAdd: tuple):
             if choice == "t":
                 KEEP_ALIVE = False
                 t1.join(0.5)
-                textMsg = str(input("Zadaj textovu spravu ktoru chces poslat\n"))
+                print("Zadaj textovu spravu ktoru chces poslat\n")
+                textMsg = str(input())
                 sleep(2)
                 send_text(textMsg, client)
 
@@ -507,38 +518,40 @@ def client_loop(client: Client, clientAdd: tuple):
             elif choice == "v":
                 os.system('cls')
             else:
-                print(f'Zla moznost')
+                if not UKONCENIE_KEEP_ALIVE:
+                    print(f'Zla moznost')
         except (ConnectionResetError, socket.timeout):
             print("Server nepocuva")
             continue
 
 
 def set_server():
-    port: int = int(input("Zadaj port serveru "))
-    # port = 6000
+    # port: int = int(input("Zadaj port serveru "))
+    port = 6000
     os.system('cls')
     server: Server = Server(("", port))
     server_loop(server, ("", port))
 
 
 def set_client():
-    port: int = int(input("Zadaj port serveru "))
-    # port = 6000
-    ip: str = str(input("Zadaj ip servera "))
-    # ip = "127.0.0.1"
+    # port: int = int(input("Zadaj port serveru "))
+    port = 6000
+    # ip: str = str(input("Zadaj ip servera "))
+    ip = "127.0.0.1"
     os.system('cls')
     client: Client = Client((ip, port))
     client_loop(client, (ip, port))
 
 
 while True:
+
     print("Zadaj s pre server a c pre klienta: ")
     opt: str = str(input())
     if opt == "s":
         set_server()
         break
 
-    if opt == "c":
+    elif opt == "c":
         set_client()
         break
     print(f'Zla moznost')
