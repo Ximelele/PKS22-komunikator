@@ -72,10 +72,11 @@ MAX_DATA_SIZE: int = 1466
 HLAVICKA: int = 6
 KEEP_ALIVE: bool = False
 UKONCENIE_KEEP_ALIVE: bool = False
-
+SERVER_SWAP: bool = False
 def keep_alive(client, serverAddressPort: tuple):
     global KEEP_ALIVE
     global UKONCENIE_KEEP_ALIVE
+    global SERVER_SWAP
     sleep(0.1)
     end_count: int = 0
     while True:
@@ -85,16 +86,22 @@ def keep_alive(client, serverAddressPort: tuple):
         try:
             client.settimeout(5)
             message, message_add = client.recvfrom(1500)
+            flag = int(chr(message[0]))
         except (ConnectionResetError, socket.timeout):
             if end_count == 5:
                 UKONCENIE_KEEP_ALIVE = True
                 break
-
+            flag = 3
             end_count += 1
             print(f'Server je nedostupny')
-        else:
+
+        if flag == 2:
             end_count = 0
             print(f'Server je dostupny')
+        if flag == 7:
+            SERVER_SWAP = True
+            KEEP_ALIVE = False
+            return
 
         for i in range(5):
             sleep(1)
@@ -124,6 +131,13 @@ def simulate_error() -> int:
 
     return errors
 
+def server_menu():
+    print("Chces vymenit strany?: a/n")
+    answer = str(input())
+    global SERVER_SWAP
+    if answer == "a":
+        SERVER_SWAP = True
+
 
 def server_loop(server: Server, serverAdd: tuple):
     print(serverAdd)
@@ -141,6 +155,7 @@ def server_loop(server: Server, serverAdd: tuple):
     global SWAPED
     global ZACIATOK_KOMUNIKACIE
     global KEEP_ALIVE
+    global SERVER_SWAP
     file_path = str(input("Zadaj kde chces ukladat subory"))
 
     try:
@@ -158,14 +173,20 @@ def server_loop(server: Server, serverAdd: tuple):
             packet_num = int.from_bytes(packet_num, 'little')
             finalMsg = message[4:]
             if flag == 0:
-                my_header = build_header(2, packet_num, "")
+                flag = 2
+                if SERVER_SWAP:
+                    flag = 7
+                my_header = build_header(flag, packet_num, "")
                 server.my_socket.sendto(my_header, message_add)
+                SERVER_SWAP = False
 
             elif flag == 5:
                 receive_text(finalMsg, server, message_add, crc, packet_num)
+                server_menu()
 
             elif flag == 6:
                 receive_file(finalMsg, server, message_add, file_path)
+                server_menu()
             elif flag == 7:
                 SWAPED = True
                 KEEP_ALIVE = False
@@ -267,7 +288,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     errors: int = 0
     last_packet: int = 0
     while True:
-        server.my_socket.settimeout(20)
+        # server.my_socket.settimeout(20)
         message, message_add = server.my_socket.recvfrom(1500)
         crc = message[-2:]
         crc = int.from_bytes(crc, 'little')
@@ -317,14 +338,17 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
 
 
 def client_menu() -> str:
+    global SERVER_SWAP
     menu = "t - textova sprava\n"
     menu += "f - poslat subor\n"
     menu += "s - zmenit strany\n"
     menu += "v - vycistit obrazovku\n"
     menu += "e - ukonci\n"
     print(menu)
-
-    return str(input())
+    menu_choice = str(input())
+    if SERVER_SWAP:
+        menu_choice = "s"
+    return menu_choice
 
 
 def send_file(file: str, client: Client):
@@ -344,7 +368,7 @@ def send_file(file: str, client: Client):
 
     flag: int = int(chr(message[0]))
     # POJEBANY KEEPALIVE
-    if (flag == 2):
+    if flag == 2:
         while flag != 4:  # tento krok si mozem dovolit lebo file name poslem vzdy bez chyby
             message, message_add = client.my_socket.recvfrom(1500)
             flag: int = int(chr(message[0]))
@@ -365,7 +389,6 @@ def send_file(file: str, client: Client):
             print("Nedostupny server")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
-                quit()
             separated_counter += 1
             sleep(2)
             continue
@@ -440,6 +463,7 @@ def client_loop(client: Client, clientAdd: tuple):
     global ZACIATOK_KOMUNIKACIE
     global UKONCENIE_KEEP_ALIVE
     global SWAPED
+    global SERVER_SWAP
     KEEP_ALIVE = False
     t1 = None
 
@@ -506,7 +530,7 @@ def client_loop(client: Client, clientAdd: tuple):
             elif choice == "s":
                 KEEP_ALIVE = False
                 t1.join()
-
+                SERVER_SWAP = False
                 my_header = build_header(7, 0, "")
                 client.my_socket.sendto(my_header, message_add)
                 message, message_add = client.my_socket.recvfrom(1500)
@@ -526,18 +550,18 @@ def client_loop(client: Client, clientAdd: tuple):
 
 
 def set_server():
-    # port: int = int(input("Zadaj port serveru "))
-    port = 6000
+    port: int = int(input("Zadaj port serveru "))
+    # port = 6000
     os.system('cls')
     server: Server = Server(("", port))
     server_loop(server, ("", port))
 
 
 def set_client():
-    # port: int = int(input("Zadaj port serveru "))
-    port = 6000
-    # ip: str = str(input("Zadaj ip servera "))
-    ip = "127.0.0.1"
+    port: int = int(input("Zadaj port serveru "))
+    # port = 6000
+    ip: str = str(input("Zadaj ip servera "))
+    # ip = "127.0.0.1"
     os.system('cls')
     client: Client = Client((ip, port))
     client_loop(client, (ip, port))
