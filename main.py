@@ -30,7 +30,7 @@ class Client:
 
 # https://stackoverflow.com/questions/35205702/calculating-crc16-in-python
 def crc16(data: bytes) -> int:
-    xor_in = 0x0000  # initial value
+    xor_in = 0x800D  # initial value
     xor_out = 0x0000  # final XOR value
     poly = 0x8005  # generator polinom (normal form)
 
@@ -79,6 +79,8 @@ def keep_alive(client, serverAddressPort: tuple):
     global SERVER_SWAP
     sleep(0.1)
     end_count: int = 0
+
+
     while True:
         my_header = build_header(0, 0, "")
 
@@ -209,30 +211,40 @@ def server_loop(server: Server, serverAdd: tuple):
         return
 
 
-def receive_text(textMsg: str, server: Server, message_add: tuple, crc: int, packet_num: int):
+def receive_text(textMsg:  bytes, server: Server, message_add: tuple, crc: int, packet_num: int):
     first: bool = True
     textArray: list = []
     errors: int = 0
     total_size: int = 0
     number_of_fragments: int = 0
     last_packet: int = 0
+    separated_counter: int = 0
     while True:
         if not first:
-            message, message_add = server.my_socket.recvfrom(1500)
-            crc = message[-2:]
-            crc = int.from_bytes(crc, 'little')
-            message = message[0:-2]
-            packet_num = message[1:4]
-            packet_num = int.from_bytes(packet_num, 'little')
+            try:
+                message, message_add = server.my_socket.recvfrom(1500)
+                crc = message[-2:]
+                crc = int.from_bytes(crc, 'little')
+                message = message[0:-2]
+                packet_num = message[1:4]
+                packet_num = int.from_bytes(packet_num, 'little')
 
-            flag = int(chr(message[0]))
-            if flag == 0:
+                flag = int(chr(message[0]))
+                if flag == 0:
+                    continue
+                if flag == 9:
+                    last_packet = packet_num
+                    number_of_fragments += 1
+                    total_size += HLAVICKA
+                    break
+            except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
+                print("Odpojeny kabel")
+                if separated_counter == 5:
+                    print("Spojenie bude ukoncene")
+                    quit()
+                separated_counter += 1
+                sleep(2)
                 continue
-            if flag == 9:
-                last_packet = packet_num
-                number_of_fragments += 1
-                total_size += HLAVICKA
-                break
 
         if first:
             check_crc = crc16(textMsg)
@@ -287,33 +299,42 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     total_size: int = len(file_name) + HLAVICKA
     errors: int = 0
     last_packet: int = 0
+    separated_counter: int = 0
     while True:
         # server.my_socket.settimeout(20)
-        message, message_add = server.my_socket.recvfrom(1500)
-        crc = message[-2:]
-        crc = int.from_bytes(crc, 'little')
-        flag = int(chr(message[0]))
-        packet_num = message[1:4]
-        packet_num = int.from_bytes(packet_num, 'little')
-        if flag == 9:
-            last_packet = packet_num
-            number_of_fragments += 1
-            total_size += HLAVICKA
-            break
-        check_crc = crc16(message[4:-2])
+        try:
+            message, message_add = server.my_socket.recvfrom(1500)
+            crc = message[-2:]
+            crc = int.from_bytes(crc, 'little')
+            flag = int(chr(message[0]))
+            packet_num = message[1:4]
+            packet_num = int.from_bytes(packet_num, 'little')
+            if flag == 9:
+                last_packet = packet_num
+                number_of_fragments += 1
+                total_size += HLAVICKA
+                break
+            check_crc = crc16(message[4:-2])
 
-        if check_crc != crc:
-            my_header = build_header(3, packet_num, "")
-            sleep(0.1)
-            server.my_socket.sendto(my_header, message_add)
+            if check_crc != crc:
+                my_header = build_header(3, packet_num, "")
+                sleep(0.1)
+                server.my_socket.sendto(my_header, message_add)
 
-            errors += 1
-            print(f'Prijaty packet: {packet_num} Chyba: True')
-            total_size += len(message[4:-2]) + HLAVICKA
-            continue
-        else:
+                errors += 1
+                print(f'Prijaty packet: {packet_num} Chyba: True')
+                total_size += len(message[4:-2]) + HLAVICKA
+                continue
+
             print(f'Prijaty packet: {packet_num} Chyba: False')
-
+        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+            print("Odpojeny kabel")
+            if separated_counter == 5:
+                print("Spojenie bude ukoncene")
+                quit()
+            separated_counter += 1
+            sleep(3)
+            continue
         my_header = build_header(4, packet_num, "")
 
         server.my_socket.sendto(my_header, message_add)
@@ -362,7 +383,7 @@ def send_file(file: str, client: Client):
     try:
         client.my_socket.sendto(my_header, client.serverAddressPort)
         message, message_add = client.my_socket.recvfrom(1500)
-    except (ConnectionResetError, socket.timeout):
+    except (ConnectionResetError, socket.timeout,socket.gaierror,socket.error):
         print("Nedostupny server")
         return
 
@@ -385,22 +406,26 @@ def send_file(file: str, client: Client):
             my_header = build_header(6, index, data[:max_data], True)
         try:
             client.my_socket.sendto(my_header, client.serverAddressPort)
-        except (ConnectionResetError, socket.timeout):
-            print("Nedostupny server")
+
+
+            message, message_add = client.my_socket.recvfrom(1500)
+        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+            print("Odpojeny kabel")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
             separated_counter += 1
-            sleep(2)
+            sleep(3)
             continue
-        separated_counter = 0
-        message, message_add = client.my_socket.recvfrom(1500)
         flag = int(chr(message[0]))
         if flag == 3:
+            separated_counter = 0
             continue
         elif flag == 4:
+            separated_counter = 0
             data = data[max_data:]
             index += 1
         else:
+            separated_counter = 0
             continue
 
     my_header = build_header(9, (index + 1), "")
@@ -425,18 +450,19 @@ def send_text(textMsg, client: Client):
         try:
             client.my_socket.sendto(my_header, client.serverAddressPort)
             # sleep(0.1)
-        except (ConnectionResetError, socket.timeout):
-            print("Nedostupny server")
+
+
+            client.my_socket.settimeout(10)
+
+            message, message_add = client.my_socket.recvfrom(1500)
+        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+            print("Odpojeny kabel")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
                 quit()
             separated_counter += 1
             sleep(2)
             continue
-        separated_counter = 0
-        client.my_socket.settimeout(10)
-        message, message_add = client.my_socket.recvfrom(1500)
-
         flag = int(chr(message[0]))
         if flag == 2:
             while flag == 2:
@@ -447,6 +473,7 @@ def send_text(textMsg, client: Client):
         elif flag == 4:
             index += 1
             textMsg = textMsg[max_data:]
+            separated_counter = 0
         else:
             continue
 
@@ -513,7 +540,6 @@ def client_loop(client: Client, clientAdd: tuple):
                 print("Zadaj subor")
                 file = str(input("Vzor: D:\Python projects\pks_komunikator\Mathematica_hnoj.zip\n"))
                 file_name = os.path.abspath(file)
-                # print(file_name)
                 sleep(1)
                 send_file(file, client)
             elif choice == "e":
@@ -551,7 +577,6 @@ def client_loop(client: Client, clientAdd: tuple):
 
 def set_server():
     port: int = int(input("Zadaj port serveru "))
-    # port = 6000
     os.system('cls')
     server: Server = Server(("", port))
     server_loop(server, ("", port))
@@ -559,9 +584,9 @@ def set_server():
 
 def set_client():
     port: int = int(input("Zadaj port serveru "))
-    # port = 6000
+
     ip: str = str(input("Zadaj ip servera "))
-    # ip = "127.0.0.1"
+
     os.system('cls')
     client: Client = Client((ip, port))
     client_loop(client, (ip, port))
