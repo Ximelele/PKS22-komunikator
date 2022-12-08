@@ -142,7 +142,6 @@ def server_menu():
 
 
 def server_loop(server: Server, serverAdd: tuple):
-    print(serverAdd)
     print("Bububu server")
     server.my_socket.settimeout(60)
     try:
@@ -293,8 +292,6 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     file_array: dict = {}
     file_name: str = file.decode()
     file_name = file_name.rsplit('\\')[-1]
-    file_name = "1" + file_name
-    # print(file_name)
     number_of_fragments: int = 1
     total_size: int = len(file_name) + HLAVICKA
     errors: int = 0
@@ -354,8 +351,9 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
 
     for i in file_array.values():
         fw.write(i)
+    fw.close()
     print(f'Subor bol ulozeny v {os.path.abspath(file_name)}')
-    print(f'Velkost suboru {os.path.getsize(final_name)}')
+    print(f'Velkost suboru {os.path.getsize(file_name)}')
 
 
 def client_menu() -> str:
@@ -431,6 +429,7 @@ def send_file(file: str, client: Client):
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
+    print("Subor bol odoslany")
 
 
 def send_text(textMsg, client: Client):
@@ -480,7 +479,7 @@ def send_text(textMsg, client: Client):
     my_header = build_header(9, (index + 1), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
-
+    print("Sprava bola poslana")
 
 SWAPED: bool = False
 
@@ -533,13 +532,12 @@ def client_loop(client: Client, clientAdd: tuple):
                 sleep(2)
                 send_text(textMsg, client)
 
-            # C:\Users\druzb\Desktop\
             elif choice == "f":
                 KEEP_ALIVE = False
                 t1.join(0.5)
                 print("Zadaj subor")
                 file = str(input("Vzor: D:\Python projects\pks_komunikator\Mathematica_hnoj.zip\n"))
-                file_name = os.path.abspath(file)
+                print(f'Absolutna cesta k suboru {os.path.abspath(file)}')
                 sleep(1)
                 send_file(file, client)
             elif choice == "e":
