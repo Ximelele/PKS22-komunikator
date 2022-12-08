@@ -3,18 +3,6 @@ import socket
 from time import sleep
 import threading
 
-
-# Keep alive 0
-# syn 1
-# ack 2
-# error 3
-# success 4 #maybe pouzivat 2ku
-# text 5
-# file 6
-# switch 7
-# end 8
-# last fragment 9
-
 class Server:
 
     def __init__(self, serverAddressPort):
@@ -73,13 +61,14 @@ HLAVICKA: int = 6
 KEEP_ALIVE: bool = False
 UKONCENIE_KEEP_ALIVE: bool = False
 SERVER_SWAP: bool = False
+
+
 def keep_alive(client, serverAddressPort: tuple):
     global KEEP_ALIVE
     global UKONCENIE_KEEP_ALIVE
     global SERVER_SWAP
     sleep(0.1)
     end_count: int = 0
-
 
     while True:
         my_header = build_header(0, 0, "")
@@ -95,14 +84,16 @@ def keep_alive(client, serverAddressPort: tuple):
                 break
             flag = 3
             end_count += 1
-            print(f'Server je nedostupny')
+            print(f'Neprislo potvrdenie Keep Alive')
 
         if flag == 2:
             end_count = 0
-            print(f'Server je dostupny')
+            print(f'Potvrdene Keep Alive')
         if flag == 7:
             SERVER_SWAP = True
             KEEP_ALIVE = False
+            sleep(2)
+            print("Budes prehodeny na server- Stlac enter pre potvrdenie")
             return
 
         for i in range(5):
@@ -133,6 +124,7 @@ def simulate_error() -> int:
 
     return errors
 
+
 def server_menu():
     print("Chces vymenit strany?: a/n")
     answer = str(input())
@@ -153,11 +145,13 @@ def server_loop(server: Server, serverAdd: tuple):
     except socket.timeout:
         server.my_socket.close()
 
+    print(f"Klient sa pripojil {message_add}")
+
     global SWAPED
     global ZACIATOK_KOMUNIKACIE
     global KEEP_ALIVE
     global SERVER_SWAP
-    file_path = str(input("Zadaj kde chces ukladat subory"))
+    file_path = str(input("Zadaj kde chces ukladat subory (Enter pre tento priecinok)"))
 
     try:
         while True:
@@ -202,7 +196,6 @@ def server_loop(server: Server, serverAdd: tuple):
                 server.my_socket.sendto(my_header, message_add)
                 print(f'Klient {message_add} sa odpojil')
 
-
     except socket.timeout:
         print("Koniec bububu")
         sleep(3)
@@ -210,7 +203,7 @@ def server_loop(server: Server, serverAdd: tuple):
         return
 
 
-def receive_text(textMsg:  bytes, server: Server, message_add: tuple, crc: int, packet_num: int):
+def receive_text(textMsg: bytes, server: Server, message_add: tuple, crc: int, packet_num: int):
     first: bool = True
     textArray: list = []
     errors: int = 0
@@ -324,7 +317,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
                 continue
 
             print(f'Prijaty packet: {packet_num} Chyba: False')
-        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+        except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
             print("Odpojeny kabel")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
@@ -381,7 +374,7 @@ def send_file(file: str, client: Client):
     try:
         client.my_socket.sendto(my_header, client.serverAddressPort)
         message, message_add = client.my_socket.recvfrom(1500)
-    except (ConnectionResetError, socket.timeout,socket.gaierror,socket.error):
+    except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
         print("Nedostupny server")
         return
 
@@ -405,9 +398,8 @@ def send_file(file: str, client: Client):
         try:
             client.my_socket.sendto(my_header, client.serverAddressPort)
 
-
             message, message_add = client.my_socket.recvfrom(1500)
-        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+        except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
             print("Odpojeny kabel")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
@@ -450,11 +442,10 @@ def send_text(textMsg, client: Client):
             client.my_socket.sendto(my_header, client.serverAddressPort)
             # sleep(0.1)
 
-
             client.my_socket.settimeout(10)
 
             message, message_add = client.my_socket.recvfrom(1500)
-        except (ConnectionResetError, socket.timeout, socket.gaierror,socket.error):
+        except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
             print("Odpojeny kabel")
             if separated_counter == 5:
                 print("Spojenie bude ukoncene")
@@ -480,6 +471,7 @@ def send_text(textMsg, client: Client):
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
     print("Sprava bola poslana")
+
 
 SWAPED: bool = False
 
