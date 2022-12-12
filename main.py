@@ -1,3 +1,4 @@
+import math
 import os
 import socket
 from time import sleep
@@ -228,6 +229,7 @@ def receive_text(textMsg: bytes, server: Server, message_add: tuple, crc: int, p
                     last_packet = packet_num
                     number_of_fragments += 1
                     total_size += HLAVICKA
+                    print(f'Prijaty packet: {packet_num}:posledny packet')
                     break
             except (ConnectionResetError, socket.timeout, socket.gaierror, socket.error):
                 print("Odpojeny kabel")
@@ -303,6 +305,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
                 last_packet = packet_num
                 number_of_fragments += 1
                 total_size += HLAVICKA
+                print(f'Prijaty packet: {packet_num}:posledny packet')
                 break
             check_crc = crc16(message[4:-2])
 
@@ -367,6 +370,8 @@ def send_file(file: str, client: Client):
     f = open(file, 'rb+')
     print(f'Velkost suboru {os.path.getsize(file)}')
     data: bytes = f.read()
+
+
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
     # posielam nazov suboru
@@ -387,6 +392,8 @@ def send_file(file: str, client: Client):
     max_data: int = choose_fragment_size()
 
     error: int = simulate_error()
+    to_send = math.ceil(len(data) / max_data)+2
+    print(f"Bude poslanych {to_send} packetov")
     index: int = 1
     separated_counter: int = 0
     while len(data) > 0:
@@ -427,8 +434,9 @@ def send_file(file: str, client: Client):
 def send_text(textMsg, client: Client):
     textMsg = str(textMsg)
     max_data: int = choose_fragment_size()
-
+    to_send = math.ceil(len(textMsg)/max_data)
     error: int = simulate_error()
+    print(f"Bude poslanych {to_send+1} packetov")
     index: int = 0
     separated_counter: int = 0
     while len(textMsg) > 0:
