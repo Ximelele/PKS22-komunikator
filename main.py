@@ -3,6 +3,7 @@ import os
 import socket
 from time import sleep
 import threading
+import hashlib
 
 class Server:
 
@@ -133,6 +134,10 @@ def server_menu():
     if answer == "a":
         SERVER_SWAP = True
 
+def count_hash(file:bytes):
+
+    hash = hashlib.sha256(file)
+    return hash.digest()
 
 def server_loop(server: Server, serverAdd: tuple):
     print("Bububu server")
@@ -212,6 +217,7 @@ def receive_text(textMsg: bytes, server: Server, message_add: tuple, crc: int, p
     number_of_fragments: int = 0
     last_packet: int = 0
     separated_counter: int = 0
+
     while True:
         if not first:
             try:
@@ -292,6 +298,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     errors: int = 0
     last_packet: int = 0
     separated_counter: int = 0
+    hash_value: str = ""
     while True:
         # server.my_socket.settimeout(20)
         try:
@@ -304,6 +311,7 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
             if flag == 9:
                 last_packet = packet_num
                 number_of_fragments += 1
+                hash_value = message[4:-2].decode()
                 total_size += HLAVICKA
                 print(f'Prijaty packet: {packet_num}:posledny packet')
                 break
@@ -339,6 +347,8 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     my_header = build_header(9, last_packet, "")
     server.my_socket.sendto(my_header, message_add)
 
+
+
     print(f'Pocet prijatych fragmentov {number_of_fragments + errors}')
     print(f'Celkova prijata velkost fragmentov {total_size}')
 
@@ -348,9 +358,15 @@ def receive_file(file: bytes, server: Server, message_add: tuple, file_path: str
     for i in file_array.values():
         fw.write(i)
     fw.close()
+    fw = open(file_name, 'rb+')
+    test = fw.read()
     print(f'Subor bol ulozeny v {os.path.abspath(file_name)}')
     print(f'Velkost suboru {os.path.getsize(file_name)}')
-
+    print(f'poslany hash{hash_value}')
+    my_hash =count_hash(test)
+    print(f'Vypocitany hash{my_hash}')
+    if str(my_hash) == str(hash_value):
+        print("Hasha sa rovnaju")
 
 def client_menu() -> str:
     global SERVER_SWAP
@@ -371,7 +387,7 @@ def send_file(file: str, client: Client):
     print(f'Velkost suboru {os.path.getsize(file)}')
     data: bytes = f.read()
 
-
+    hash = count_hash(data)
     my_header = build_header(6, 0, file)
     # na nazov suboru sa fragmentacia nestahuje
     # posielam nazov suboru
@@ -425,7 +441,7 @@ def send_file(file: str, client: Client):
             separated_counter = 0
             continue
 
-    my_header = build_header(9, (index + 1), "")
+    my_header = build_header(9, index, str(hash))
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
     print("Subor bol odoslany")
@@ -475,7 +491,7 @@ def send_text(textMsg, client: Client):
         else:
             continue
 
-    my_header = build_header(9, (index + 1), "")
+    my_header = build_header(9, (index), "")
     client.my_socket.sendto(my_header, client.serverAddressPort)
     message, message_add = client.my_socket.recvfrom(1500)
     print("Sprava bola poslana")
